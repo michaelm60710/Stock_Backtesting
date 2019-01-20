@@ -96,8 +96,9 @@ if __name__ == "__main__":
                           'and rebuild the data.\nAre you sure you want to do this? (y/n): ')).lower().strip()
         if reply == 'y':
             # 1. Delete 
+            print ("# 1. Remove files.")
             for (dirpath, dirnames, filenames) in os.walk(FD_path):
-                print ("rm files in " + dirpath)
+                print ("\trm files in " + dirpath)
                 for file in filenames:
                     if file.endswith(".csv"):
                         os.remove(os.path.join(dirpath, file))
@@ -106,11 +107,17 @@ if __name__ == "__main__":
             record = Record(FD_path + '/record.txt')
             record.init_record_file()
 
-            # 3. Rebuild
+            # 3. build directories
+            print ("# 2. Build/Check directories.")
+            if not os.path.exists(PKL_path): os.makedirs(PKL_path)
+            if not os.path.exists(FD_path): os.makedirs(FD_path)
             for func_data in record.get_each_data():
-                start_date = datetime.datetime.strptime(str(func_data['End']), '%Y%m%d') + datetime.timedelta(days=1)
-                start_date = str(next_date.date()).replace("-", "")
-                Wrapper(start_date, today, [ func_data['Func_name'] ] ) 
+                Write_directory = FD_path + "/" + func_data
+                if not os.path.exists(Write_directory):
+                    os.makedirs(Write_directory)
+
+            # 4. Use ./main -u
+            print ("# 3. Rebuild the directories, please use command: \"./main.py -u\" to update DATA. ")
     else:
         pass
 

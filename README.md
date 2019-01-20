@@ -17,7 +17,7 @@
 \> cd Program/Crawler
  
 
-> 第一次須先執行: rebuild
+> 第一次須先執行: rebuild 來重建data資料夾
 
 \> ./main.py -rebuild
 > 之後: update DATA
