@@ -112,7 +112,7 @@ if __name__ == "__main__":
             if not os.path.exists(PKL_path): os.makedirs(PKL_path)
             if not os.path.exists(FD_path): os.makedirs(FD_path)
             for func_data in record.get_each_data():
-                Write_directory = FD_path + "/" + func_data
+                Write_directory = FD_path + "/" + func_data['Func_name']
                 if not os.path.exists(Write_directory):
                     os.makedirs(Write_directory)
 
