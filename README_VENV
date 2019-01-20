@@ -1,0 +1,14 @@
+# Create virtual enviroment: futures_venv
+> virtualenv futures_venv
+
+# activate virtual environment (stockenv)
+> . futures_venv/bin/activate
+
+# Install packages in virtualenv (only need to do it for once)
+> pip3 install -r requirements.txt
+
+# deactivate
+> deactivate
+
+# Output installed packages in requirements format
+>pip3 freeze > Temp_requirements.txt
