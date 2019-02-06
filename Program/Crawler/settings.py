@@ -18,7 +18,7 @@ Crawl_dict = {'Institutional_investors': {'start':'20040407','date_format':'%Y%m
               'MTX_Investors':           {'start':'20151231','date_format':'%Y/%m/%d', 'date_name': '日期'     },
               'TX_Investors':            {'start':'20151231','date_format':'%Y/%m/%d', 'date_name': '日期'     },
               'Taifutures_LargeTrade':   {'start':'20040701','date_format':'%Y/%m/%d', 'date_name': '日期'     },
-              # Stocks : multi index (Stock ID)
+              # Stocks
               'Stock_Price':             {'start':'20050114','date_format':'%Y%m%d',   'date_name': '日期'     },
               'Stock_Investors':         {'start':'20120502','date_format':'%Y%m%d',   'date_name': '日期'     },
               }
@@ -28,6 +28,6 @@ Crawl_dict = {'Institutional_investors': {'start':'20040407','date_format':'%Y%m
     2. Update Wrapper
     3. Update record.txt
     4. Make new dirctory
-    4. Update Check_miss_data 
-    5. Update datapreprocessing
+    5. Update Check_miss_data 
+    6. Update datapreprocessing
 '''

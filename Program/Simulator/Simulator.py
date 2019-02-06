@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
 import pandas as pd
+import numpy as np
 import logging
 import sys, os
 sys.path.insert(0, os.path.abspath(""+"../Crawler"))
 
 from Packing import Data_preprocessing
-from Component import Component
+from Component import Component, Components_lib
 
 # import plotly
 import plotly
@@ -25,34 +27,42 @@ class Simulator():
     _hold = None
     _hold_AllDateIndex = None
 
-    #Price = None
-    #Start_date = None
-    #End_date = None
     _tax = None
 
+    # Information 
     Report_item = dict()
+    _each_stocks_trade_count = None
+    _Sell_info = None
+    _Profit_rate_list = None
     _Report_str = ""
 
-    _DP = None # Class Data_preprocessing
+    # Class
+    _DP = None        # Class Data_preprocessing
+    Components = None # Class Components_lib
 
     def __init__(self, updatePKL = True, rebuildPKL = False):
-        #logging.info("Init Simulator")
+
+        self.logger = logging.getLogger(__name__)
+
         self._DP = Data_preprocessing(update = updatePKL, rebuild = rebuildPKL)
         self.DATA = self._DP.data_dict
-        #super().__init__(update = updatePKL, rebuild = rebuildPKL)
-        #self.DATA = self.data_dict
+        self.Components = Components_lib(self.DATA)
 
     def Setup(self, buy, sell, tax = 80, long_short = 'long'):
         '''
         set up : buy, sell, tax, hold, hold_AllDateIndex
         '''
+
         # long_short 
         if type(long_short) is str and long_short.lower() == 'long':
             self._long_short = 'long'
         elif type(long_short) is str and long_short.lower() == 'short':
             self._long_short = 'short'
         else:
-            logging.error("Wrong long_short input. Try to use: \'long\' or \'short\'.")
+            self.logger.error("Wrong long_short input. Try to use: \'long\' or \'short\'.")
+        
+        if len(sell.data) != len(buy.data): logging.warning(" Length of sell and buy is different. ")
+        
         # tax 
         self._tax = tax 
 
@@ -61,81 +71,85 @@ class Simulator():
         self._sell = sell.shift(1)
 
         # buy sell 整理 （假設交易為'買多')
-        # sell, buy不能同時為True. If sell == True: buy = False
+        # sell, buy不能同時為True. If sell is True, buy must be False
         self._buy = self._buy & (self._buy != self._sell)
 
+        # set buy signal = 2, set sell signal = -1. # Buy_Sell = buy + sell
+        # if Buy_Sell > 0: hold = True, elif Buy_Sell < 0: hold = False, elif Buy_Sell == 0: hold = previous_value
+        Buy_Sell = (self._buy.data * 2).fillna(0) + (self._sell.data * -1).fillna(0) 
+
         # hold
-        self._hold = self._buy.data.copy()
-        sell_series = self._sell.data
-        assert len(sell_series) == len(self._hold), "ERROR: length of sell and hold is different."
-        prev = self._hold[0] 
-        for i, v in self._hold.iteritems():
-            if sell_series[i]: 
-                self._hold[i] = False
-            elif not self._hold[i]:
-                self._hold[i] = prev
-            prev = self._hold[i]
+        Buy_Sell = AddFirstRow(Buy_Sell)
+        self._hold = Buy_Sell.applymap(Hold_convert) 
 
         # hold with all date
-        idx = pd.date_range(start = self._buy.data.index[0],end = self._buy.data.index[-1])
-        buy_AllDateIndex = self._buy.data.reindex(idx,fill_value=False)
-        sell_AllDateIndex = self._sell.data.reindex(idx,fill_value=False)
-        self._hold_AllDateIndex = pd.Series(data = 0, index=idx)
-        prev = 0
-        for i, v in self._hold_AllDateIndex.iteritems():
-            if sell_AllDateIndex[i]: 
-                self._hold_AllDateIndex[i] = 0
-            elif buy_AllDateIndex[i]:
-                self._hold_AllDateIndex[i] = 1
-            else:
-                self._hold_AllDateIndex[i] = prev
-            prev = self._hold_AllDateIndex[i]
+        Buy_Sell = Fillup_missing_date(Buy_Sell)
+        self._hold_AllDateIndex = Buy_Sell.applymap(Hold_convert) 
 
         return self
 
-    def Run(self, buy, sell, tax = 80, long_short = 'long', OHLC_data = None, buy_price = None, sell_price = None, \
-        Futures_Unit = 50, Principal = 30000, start_date = None, end_date = None):
+    def Run(self, buy, sell, tax = 80, sell_price = None, buy_price = None, \
+            start_date = None, end_date = None, long_short = 'long', \
+            Mode = 'Futures', OHLC_data = None, Futures_Unit = None, Money = None):
         '''
-        Futures_Unit: 小台一點50
-        Principal: 本金
+        Money: 本金
         buy_price: open | close
         sell_price: open | close
+        Mode: Stocks | Futures  
+        Futures_Unit: 小台一點50 (Futures Mode)
         '''
-
+        self.logger.setLevel(logging.INFO)
         # Setup buy, sell, hold data, tax
         self.Setup(buy = buy, sell = sell, tax = tax, long_short = long_short)
 
         # ------------------- #
+        #     Mode select     #
+        # ------------------- #
+        # default settings
+        Mode = Mode.lower()
+        if Mode == 'futures':
+            if Futures_Unit is None: Futures_Unit = 50
+            if OHLC_data    is None: OHLC_data = self.DATA['台指期貨_一般']
+            if Money        is None: Money = 30000
+        elif Mode == 'stocks':
+            Futures_Unit = 1
+            if OHLC_data    is None: OHLC_data = self.DATA['台股個股']
+            if Money        is None: Money = 1000000
+        else:
+           self.logger.error("Wrong Mode select. Try to use: \'futures\' or \'stocks\'.")
+        self.logger.info("Mode : " + Mode)
+
+        # ------------------- #
         #  Setting arguments  #
         # ------------------- #
-        if OHLC_data is None:
-            OHLC_data = self.DATA['台指期貨_一般']
-        
-        if buy_price is None:
-            buy_price = OHLC_data['Open'].astype(float)
-        elif buy_price == 'Open' or buy_price == 'Close':
-            buy_price = OHLC_data[buy_price].astype(float)
-        elif type(buy_price) != pd.core.series.Series:
-            logging.error("Wrong buy_price format. Try to use: \'Open\', \'Close\' or Series type.")
-        
-        if sell_price is None:
-            sell_price = OHLC_data['Close'].astype(float)
-        elif sell_price == 'Open' or sell_price == 'Close':
-            sell_price = OHLC_data[sell_price].astype(float)
-        elif type(sell_price) != pd.core.series.Series:
-            logging.error("Wrong sell_price format. Try to use: \'Open\', \'Close\' or Series type.")
+        def price(use_price, default_use):
+            '''
+                for sell_price & buy_price
+            '''
+            if use_price is None:
+                use_price = OHLC_data[default_use].astype(float)
+            elif use_price == 'Open' or use_price == 'Close':
+                use_price = OHLC_data[use_price].astype(float)
+            elif type(use_price) != pd.core.series.Series:
+                self.logger.error("Wrong {0} format. Try to use: \'Open\', \'Close\' or Series type.".format(use_price))
+            if type(use_price) == pd.core.series.Series:
+                use_price = use_price.to_frame()
+            return use_price
 
-        if start_date is None:
-            start_date = buy_price.index[0]
+        buy_price  = price(use_price = buy_price,  default_use = 'Open')
+        sell_price = price(use_price = sell_price, default_use = 'Close')
 
-        if end_date is None:
-            end_date = buy_price.index[-1]
+        if start_date is None: start_date = self._hold.index[0]
+        start_date = max(start_date, self._hold.index[0], buy_price.index[0])
+
+        if end_date is None: end_date = self._hold.index[-1]
+        end_date = max(end_date, self._hold.index[-1], buy_price.index[-1])
 
         Close_price = OHLC_data['Close'].astype(float)
         tax = self._tax
 
+
         # Index 整合
-        OHLC_data = Select_time(OHLC_data, start_date, end_date)
         buy_price = buy_price.truncate(start_date, end_date, axis = 0)
         sell_price = sell_price.truncate(start_date, end_date, axis = 0)
         Close_price = Close_price.truncate(start_date, end_date, axis = 0)
@@ -144,100 +158,182 @@ class Simulator():
         # ------------------------ #
         #  Calculate Profit/Loss   #
         # ------------------------ #
+        # Use hold_all, buy_price, sell_price
+        # BuySell: buy = 1, sell = -1, others = 0
+        BuySell = hold_all.apply(EachCol, axis = 0)
 
-        # Cost, 只算交易完的價值
-        Cost = pd.Series(data = 0, index = hold_all.index)
-        # Cost_risk, 算手上持有股每天收盤時的價值
-        Cost_risk = pd.Series(data = 0, index = hold_all.index)
-        # loss, 虧損評估, Current/Max_profit
-        loss = pd.Series(data = 0.0, index = Cost_risk.index)
+        # Init variable
+        #trade_times = 0
+        #exception_trades = 0
+        Ratio = 0.5
+        buy_ratio = 0
+        sell_hold_stocks = 0 # 算當日把持有全賣掉所獲的unit
+        I_Unit = 1           # Ideal
+        Unit_tmp = I_Unit    # 類似現有手頭資金
+        Unit_Cost = []       # 類似換算總資金, 把所有持股也賣掉來換算
+        Unit_Hold = []       # 類似持股
+        Unit      = []       # list of Unit_tmp
+        self._Sell_info = []  # sell stocks, unit, profit_rate
+        self._Profit_rate_list = [] # all profit rate
 
-        price = None
-        pre_Cost = 0
-        for i, v in hold_all.iteritems():
-            if v:
-                if price is None:
-                    price = buy_price[i]
-                Cost_risk[i] = Close_price[i] - price
-            elif price is not None:
-                pre_Cost = pre_Cost + (sell_price[i] - price)*Futures_Unit - tax
-                price = None
+        hold_info_list = [ 0 for i in BuySell.columns] # daily hold stocks info
+        buyprice_info  = [ 0 for i in BuySell.columns] # hold stock's buy price
+
+        # Sort dataframeby columns 
+        BuySell = BuySell.sort_index(axis = 1)
+        sell_price = sell_price.sort_index(axis = 1)
+        buy_price = buy_price.sort_index(axis = 1)
+
+        for (idx1, row), (idx2, sell_row), (idx3, buy_row) in zip(BuySell.iterrows(), sell_price.iterrows(), buy_price.iterrows()):
             
-            Cost_risk[i] = Cost_risk[i] + pre_Cost 
-            Cost[i] = pre_Cost
-            pre_Cost = Cost[i]
+            # Step 1. Calculate how many stocks have buy signals
+            pos_count = 0
+            for v in row: 
+                if v > 0: pos_count += 1
+            # prevent division by zero
+            if pos_count == 0: pos_count = 1 
+            
+            # Step 2. Calculate Ideal buy ratio
+            buy_ratio = Unit_tmp*Ratio/pos_count
+            assert buy_ratio > 0, "buy_ratio = {0} {1} {2}".format(buy_ratio,Unit_tmp,Ratio)
+            
+            # Step 3. Run each StockID: to calculate daily Unit, Unit_Hold, Unit_Cost
 
+            # setting before run pre_DF
+            new_buyprice_info  = []
+            new_hold_info_list = []
+            daily_sell_info = dict()
+            sell_hold_stocks = 0
+            
+            # Run each stocksID
+            for stock_idx, Cur_BuySellSignal, Cur_sellprice, Cur_buyprice, pre_buyprice_info, hold_info \
+                in zip(row.index, row.values, sell_row.values, buy_row.values, buyprice_info, hold_info_list):
+                
+                # refresh buyprice & hold info
+                if Cur_BuySellSignal > 0: # New buy signal
+                    if not np.isnan(Cur_buyprice): # if buyprice is Nan, dont trade
+                        pre_buyprice_info = Cur_buyprice
+                        hold_info = buy_ratio
+                        Unit_tmp -= buy_ratio
+                elif Cur_BuySellSignal < 0 and hold_info > 0: # New sell signal
+                    if np.isnan(Cur_sellprice):
+                        Unit_add = hold_info
+                        #exception_trades += 1
+                    else:
+                        Unit_add = hold_info*Cur_sellprice/pre_buyprice_info
+                        daily_sell_info[stock_idx] = {'hold_info':hold_info, \
+                                                      'profit_rate':(Cur_sellprice-pre_buyprice_info)/pre_buyprice_info}
+                        self._Profit_rate_list.append((Cur_sellprice-pre_buyprice_info)/pre_buyprice_info)
+                        #trade_times += 1
+                    
+                    Unit_tmp += Unit_add
+                    pre_buyprice_info = 0
+                    hold_info = 0
 
-        Max_profit = 0
-        for i, v in Cost_risk.iteritems():
-            if v > Max_profit:
-                Max_profit = v
-            loss[i] = (Principal + v)/(Principal + Max_profit)
+                # calculate sell_hold_stocks
+                if hold_info > 0: 
+                    sell_hold_stocks += hold_info*Cur_buyprice/Cur_sellprice
+                
+                new_buyprice_info.append(pre_buyprice_info)
+                new_hold_info_list.append(hold_info)
+            
+            # update buyprice & hold info
+            buyprice_info  = new_buyprice_info
+            hold_info_list = new_hold_info_list
+
+            # Record unit info
+            Unit.append(Unit_tmp)
+            Unit_Cost.append(Unit_tmp + sell_hold_stocks) # cost = Unit_tmp + sell_hold_stocks
+            Unit_Hold.append(hold_info_list)
+
+            self._Sell_info.append(daily_sell_info)
+
+        # Ideal info
+        Unit_Hold = pd.DataFrame(Unit_Hold, columns=BuySell.columns, index = BuySell.index)
+        Unit      = pd.DataFrame(Unit, index=BuySell.index)
+        Unit_Cost = pd.DataFrame(Unit_Cost, index=BuySell.index).rename(columns={0:'Unit_Cost'}).round(3)
+
+        # TODO (actual info) Hold, RemainMoney, Cost
+
+        # Max_profit 
+        Max_profit = Unit_Cost.max()
+
+        # loss, 虧損評估, Current/Max_current_profit
+        loss = Unit_Cost/Unit_Cost.cummax()
+        loss = loss.rename(columns={'Unit_Cost':'loss'})
+        loss[loss < 0] = 0
 
 
         # WeightIndex_profit
-        WeightIndex_profit = Close_price.copy()
+        WeightIndex_profit = self.DATA['加權指數']['Close'].copy()
         WeightIndex_profit = WeightIndex_profit.truncate(start_date, WeightIndex_profit.index[-1], axis = 0)
-        WeightIndex_profit = (WeightIndex_profit - WeightIndex_profit[0])*Futures_Unit
+        WeightIndex_profit = WeightIndex_profit/WeightIndex_profit[0]
 
         # round
         loss = loss.round(2)
-        Cost_risk = Cost_risk.astype(int)
-        Cost = Cost.astype(int)
-        WeightIndex_profit = WeightIndex_profit.astype(int)
 
         # Long or shot
         if self._long_short == 'short':
-            loss = -loss
-            Cost_risk = -Cost_risk
-            Cost = -Cost
-            WeightIndex_profit = -WeightIndex_profit
+            pass # TODO
 
         # Report
-        self.Report(Cost, Principal, hold_all)
+        self._each_stocks_trade_count = BuySell.apply(pd.value_counts).loc[1]
+        self._each_stocks_trade_count = self._each_stocks_trade_count[self._each_stocks_trade_count > 0]
+        trade_times = int(self._each_stocks_trade_count.sum())
+        self.Report(Unit_Cost['Unit_Cost'], Money = I_Unit, hold_all = hold_all, trade_times = trade_times)
 
         # Plot
-        return self.SubPlotly(WeightIndex_profit, Cost_risk, loss, OHLC_data)
+        #return WeightIndex_profit, Unit_Cost.squeeze(), loss.squeeze()
+        return self.SubPlotly(WeightIndex_profit, Unit_Cost.squeeze(), loss.squeeze(), Mode = Mode)
 
-    def Report(self, Cost, Principal, hold_all):
+    def Report(self, Cost, Money, hold_all, **kwargs):
         '''
         交易開始日期: start_date, 交易結束日期: end_date
         獲利: Profit, 最大獲利: Max_Profit, 最小獲利(或虧損): Min_Profit
         報酬率: ROI, 年報酬率: Annualized_ROI
         交易次數: trade_times
-        平均持倉時間: Ave_hold_days, 最長持倉時間: Max_hold_days
-        最短持倉時間: Min_hold_days
+        平均持倉時間: Ave_hold_days, 最長持倉時間: Max_hold_days (只算交易日)
+        最短持倉時間: Min_hold_days (只算交易日)
         '''
 
         # Setttings report
         self.Report_item['start_date'] = Cost.index[0]
         self.Report_item['end_date'] = Cost.index[-1]
-        self.Report_item['Profit'] = Cost[-1]
-        self.Report_item['Max_Profit'] = Cost.nlargest(1)[0]
-        self.Report_item['Min_Profit'] = Cost.nsmallest(1)[0]
-        self.Report_item['ROI'] = float(self.Report_item['Profit']/Principal)
+        self.Report_item['Money']  = Money
+        self.Report_item['Profit'] = round(Cost[-1] - Money, 3)
+        self.Report_item['Max_Profit'] = round(Cost.nlargest(1)[0] - Money, 3)
+        self.Report_item['Min_Profit'] = round(Cost.nsmallest(1)[0] - Money, 3)
+        self.Report_item['ROI'] = float(self.Report_item['Profit']/Money)
         self.Report_item['Annualized_ROI'] = 0
         self.Report_item['trade_times'] = 0
         self.Report_item['Ave_hold_days'] = 0
         self.Report_item['Max_hold_days'] = 0
         self.Report_item['Min_hold_days'] = 10000
 
+        # add Report 
+        for key in kwargs:
+            #self.logger.info("Add new report info: {0}, {1}".format(key,kwargs[key]))
+            self.Report_item[key] = kwargs[key]
+
         # Calculate Ave/Max/Min_hold_days, trade_times
-        trade_start = None
-        for i, v in hold_all.iteritems():
-            if v:
-                if trade_start is None :
-                    self.Report_item['trade_times'] += 1
-                    trade_start = i
-                    
-            elif trade_start is not None:
-                period = (i - trade_start).days
-                if period > self.Report_item['Max_hold_days']:
-                    self.Report_item['Max_hold_days'] = period
-                if period < self.Report_item['Min_hold_days']:
-                    self.Report_item['Min_hold_days'] = period
-                self.Report_item['Ave_hold_days'] += period
-                trade_start = None
+        for col, Stock_series in hold_all.iteritems():
+            trade_start = None
+            Trading_day_idx = 0
+            for i, v in Stock_series.iteritems():
+                Trading_day_idx += 1
+                if v:
+                    if trade_start is None :
+                        trade_start = Trading_day_idx
+                        
+                elif trade_start is not None:
+                    period = Trading_day_idx - trade_start
+                    if period > self.Report_item['Max_hold_days']:
+                        self.Report_item['Max_hold_days'] = period
+                    if period < self.Report_item['Min_hold_days']:
+                        self.Report_item['Min_hold_days'] = period
+                    self.Report_item['Ave_hold_days'] += period
+                    trade_start = None
+
         self.Report_item['Ave_hold_days'] = round(self.Report_item['Ave_hold_days']/self.Report_item['trade_times'], 2)
 
         # Calculate Annualized ROI: (（1＋ROI）^（1／year））－1
@@ -260,6 +356,7 @@ class Simulator():
         report_str += "# {:>20} = {:>15} to {:}{:>4}\n".format('Period', start, end, "#")
         report_str += "# {:>20} = {:>15}{:>18}\n".format('Num of Trade', self.Report_item['trade_times'],"#")
 
+        report_str += "# {:>20} = {:>15}{:>18}\n".format('Money', self.Report_item['Money'], "#")
         report_str += "# {:>20} = {:>15}{:>18}\n".format('Profit', self.Report_item['Profit'], "#")
         report_str += "# {:>20} = {:>15}{:>18}\n".format('Max Profit', self.Report_item['Max_Profit'], "#")
         report_str += "# {:>20} = {:>15}{:>18}\n".format('Min Profit', self.Report_item['Min_Profit'], "#")
@@ -277,10 +374,9 @@ class Simulator():
         self._Report_str = report_str
         print(report_str)
 
-    def SubPlotly(self, WeightIndex_profit, Cost_risk, loss, OHLC_data):
-    
+    def SubPlotly(self, WeightIndex_profit, Cost_risk, loss, Mode):
         # ------------------------------ #
-        #    First Fig: Compaere Profi   #
+        #    First Fig: Compare Profit   #
         # ------------------------------ #
         # fig1: 1. 大盤獲利
         fig1 = []
@@ -311,6 +407,23 @@ class Simulator():
             yaxis='y1',
             name='績效獲利'
         ) )
+        if Mode == 'stocks':
+            trade_info = pd.Series(data = self._Sell_info, index = Cost_risk.index)
+            trade_info = trade_info[trade_info != {}]
+            new_trade_info = self._Convert_tradeInfo_to_str(trade_info)
+            fig1.append( dict(
+                type = 'scatter',
+                y = pd.Series(data = 1, index = trade_info.index),
+                x = trade_info.index,
+                text = new_trade_info,
+                mode = 'lines+markers',
+                marker = dict(size = 3,
+                    color = 'black',
+                    ),
+                line = dict(width = 1,),
+                yaxis='y1',
+                name = 'Trade info',
+            ) )
 
         # ------------------------------ #
         #   Second Fig: loss percentage  #
@@ -335,7 +448,7 @@ class Simulator():
         #   Sub Plot  #
         # ----------- #
         # add traces
-        fig = tools.make_subplots(rows=2, cols=1,  subplot_titles=('First Subplot','Second Subplot') )
+        fig = tools.make_subplots(rows=2, cols=1,  subplot_titles=('績效','DropDown') )
         for f in fig1:
             fig.add_trace(f, 1, 1)
         for f in fig2:
@@ -350,10 +463,28 @@ class Simulator():
         # Plot
         return py.iplot(fig, filename='Results')
 
-    def Iplotly(self, OHLC_data = None, start_date = None, end_date = None, hold = None, return_iplot = True):
+    def Iplotly(self, start_date = None, end_date = None, hold = None, return_iplot = True, StockID = None, Mode = 'Futures'):
+        
+        # Mode
+        Future_mode = 'futures'
+        Stock_mode  = 'stocks'
+        Mode = Mode.lower()
+        if Mode   == 'futures': 
+            Mode = Future_mode
+        elif Mode == 'stocks':  
+            Mode = Stock_mode
+            if StockID is None: self.logger.error("Please select a stockID.")
+        else:
+            self.logger.error("Wrong Mode select. Try to use: \'futures\' or \'stocks\'.")
+        self.logger.info("Mode : " + Mode)
         
         # Init variable
-        if OHLC_data  is None: OHLC_data = self.DATA['加權指數']
+        if Mode == Future_mode:
+            OHLC_data = self.DATA['加權指數']
+        else: #if Mode == Stock_mode:
+            OHLC_data = self._GetStock_OHLCV_data(StockID)
+
+
         if start_date is None: start_date = OHLC_data.index[0]
         if end_date   is None: end_date = OHLC_data.index[-1]
 
@@ -367,14 +498,19 @@ class Simulator():
         else:
             hold_AllDateIndex = hold.truncate(OHLC_data.index[0], OHLC_data.index[-1], axis = 0)
 
+        if Mode == Stock_mode:
+            hold_AllDateIndex = hold_AllDateIndex[StockID]
+        else:
+            hold_AllDateIndex = hold_AllDateIndex.squeeze() # convert DF to series
+
         #----------------------------#
         #        plotly setup        #
         #----------------------------#
 
         # 1. Settings
         fig = dict( data= [dict()] )
-        INCREASING_COLOR = '#AA0000' #Red
-        DECREASING_COLOR = '#227700' #Green
+        INCREASING_COLOR = '#AA0000' # Red
+        DECREASING_COLOR = '#227700' # Green
 
         # 2. 大盤
         fig['data'].append( dict(
@@ -393,6 +529,11 @@ class Simulator():
         fig['layout'] = dict(
         shapes = self._Hold_shape_insert([], hold_AllDateIndex)
         )
+        print("# trade times: {0}".format(len(fig['layout']['shapes']) ) )
+
+        # 4. ignore empty dates 
+        #fig['layout']['xaxis'] = {'type':'category'}
+        
         if return_iplot:
             return py.iplot(fig, filename='TW_Futures')
         else:
@@ -425,6 +566,27 @@ class Simulator():
         
         return shape
 
+    def _GetStock_OHLCV_data(self, StockID):
+        name_list = ['Open', 'High', 'Low', 'Close', 'Volume']
+        data_list = dict()
+        for name in name_list:
+            data_list[name] = self.DATA['台股個股'][name][StockID]
+        OHLCV = pd.DataFrame(data = data_list)
+        
+        return OHLCV
+
+    def _Convert_tradeInfo_to_str(self, trade_info): #trade_info = list
+        new_trade_info = []
+        for idx in trade_info:
+            string1 = ""
+            for stockID, value in idx.items():
+                string1 += stockID + ": "
+                for v, value in value.items():
+                    string1 += "{0}={1}, ".format(v, round(value,2))
+                string1 += '<br>'
+            new_trade_info.append(string1)
+        return new_trade_info
+
     # Usage function
     def Print_data_columns(self):
         for x in self.DATA:
@@ -452,6 +614,9 @@ def Select_time(df, first_day, last_day):
     return df.loc[first_day:last_day]
 
 def date_convert(date):
+    '''
+    str to date
+    '''
     import datetime
     if type(date) == str:  
         return datetime.datetime.strptime(date, '%Y-%m-%d')
@@ -459,6 +624,79 @@ def date_convert(date):
         return date
 
 
+#-----------------------------#
+#        For Sim setup        #
+#-----------------------------#
+
+def Fillup_missing_date(df, fill_value = 0):
+    '''
+    Fill missing date
+    '''
+    idx = pd.date_range(start = df.index[0],end = df.index[-1])
+    return df.reindex(idx, fill_value = fill_value)
+
+def static_var(**kwargs):
+    '''
+    Generate/Init Static variable
+    '''
+    def decorate(func):
+        for k in kwargs:
+            setattr(func, k, kwargs[k])
+        return func
+    return decorate
+
+@static_var(hold=False)
+def Hold_convert(x):
+    '''
+    Generate Static variable: 'hold' (Used to keep previous value)
+    # NOTE: Need to init static value before using it
+    '''
+    if x > 0:
+        Hold_convert.hold = True
+    elif x < 0:
+        Hold_convert.hold = False
+
+    return Hold_convert.hold
+
+def AddFirstRow(df, first_row_value = -1):
+    '''
+    To avoid wrong conditions during calculating 'hold' data, add a new row at the first row. 
+    '''
+    import datetime
+    if type(df) is pd.core.series.Series:
+        df = df.to_frame()
+    
+    FirstDate = df.index[0].to_pydatetime() - datetime.timedelta(days=1)
+    tmp_df = pd.DataFrame(data = first_row_value, columns = df.columns, index = [FirstDate])
+    return  pd.concat([tmp_df, df])
+    
+
+#-----------------------------#
+#     For Sim Run: Buy        #
+#-----------------------------#
+
+@static_var(prev=False)
+def Update_hold(x):
+    '''
+    buy = 1, sell = -1, others = 0
+    '''
+    tmp = 0
+    if Update_hold.prev != x:
+        if x: tmp = 1
+        else: tmp = -1
+    Update_hold.prev = x
+    
+    return tmp
+
+def EachCol(x):
+    # Init Update_hold
+    Update_hold.prev = x[0]
+
+    return x.apply(Update_hold)
+
+
+
 if __name__ == '__main__':
+    # debug and test use
     Simulator()
         

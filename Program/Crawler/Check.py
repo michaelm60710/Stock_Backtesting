@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import os
 from settings import Crawl_dict, FD_path
+import logging
 
-##### Maintain record.txt
+# ------------------------ #
+#  record.txt Maintenance  #
+# ------------------------ #
 class Record:
 
     def __init__(self, file_path):
@@ -78,10 +81,9 @@ class Record:
             yield {'Func_name':key, 'Start': value[0], 'End': value[1]}
 
 
-##### End
-
-
-
+# ------------------- #
+#   Check Functions   #
+# ------------------- #
 def Check_columns(col_array, filter_list, df = None):
     
     # Check columns
@@ -103,12 +105,20 @@ def Check_directory_files(FD_path, Write_directory, check_file = "None"):
         print ('the file: ' + check_file[len(Write_directory)+1:] + ' exists!')
         return 0
 
+def Check_duplicated_date(df, name):
+    if len(df.index.get_duplicates()) > 0:
+        # find duplicated date
+        logging.warning('{0} has duplicated date. Date : {1}'.format(name, str(df.index.get_duplicates().tolist())) )
+
+
+
+
 # test
 if __name__ == '__main__':
-    # pass
-    record = Record('record.txt')
-    record.readfile()
-    record.update_latest_date()
+    pass
+    #record = Record('record.txt')
+    #record.readfile()
+    #record.update_latest_date()
 
 
 

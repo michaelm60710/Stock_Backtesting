@@ -33,3 +33,29 @@
 
 # Example
 > path: Program/Jupyter/
+
+
+# Update 1.1V_S0206
+
+1. Simulator
+
+> 新增個股回測
+> 
+> Simulator 優化
+> 
+> Plotly 新增 Trade_info (Only for stocks Mode)
+
+2. Component
+
+> 優化 Operator
+> 
+> 買賣日期自動update (Operation, Run function)
+> 
+> 新增 talib_Output
+> 
+> 新增 components_lib
+
+3. Example
+
+>
+> 新增 backtest\_Stocks_example1

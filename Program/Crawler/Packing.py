@@ -236,6 +236,9 @@ class Data_preprocessing:
             print ("# Read pickle ")
             self.load_pkl()
 
+        # Debug & Check
+        self.Check()
+
     def read_csv_files(self, Only_unprocess_data = False):
         for func_name, value in Crawl_dict.items():
             path = FD_path + "/" + func_name +"/"
@@ -418,16 +421,48 @@ class Data_preprocessing:
             stock_df = self.origin_dict[stock_df]
             Data_Name_list =  stock_df['Data_Name'].drop_duplicates().tolist()
             for data_name in Data_Name_list:
-                self.data_dict['台股個股'][data_name] = stock_df[stock_df['Data_Name'] == data_name]
-
+                frame = stock_df[stock_df['Data_Name'] == data_name]
+                frame = frame.apply(pd.to_numeric, errors='coerce') 
+                self.data_dict['台股個股'][data_name] = frame.drop(['Data_Name'], axis = 1)
+        
+        # rename
+        self.data_dict['台股個股']["法人總計"] = self.data_dict['台股個股']["總計"].copy()
+        del self.data_dict['台股個股']["總計"]
 
         #######################################
-        # 8. Rewrite finance data pkl         #
+        # 8. Fill NaN                         #
+        #######################################
+        self.FillNan()
+
+        #######################################
+        # 9. Rewrite finance data pkl         #
         #######################################
         print ("update finance data pkl.")
         file = open(PKL_path+'/finance_data.pkl', 'wb')
         pickle.dump(self.data_dict, file)
         
+    def Check(self):
+
+        # check duplicated 
+        from Check import Check_duplicated_date
+        for x in self.data_dict:
+            if type(self.data_dict[x]) is dict:
+                for xx in self.data_dict[x]:
+                    Check_duplicated_date(self.data_dict[x][xx],x+"->"+xx)
+            else:
+                Check_duplicated_date(self.data_dict[x],x)
+
+    def FillNan(self):
+        # use fillna(method='ffill', limit = 5)
+        limit = 5
+        print('# Fill Nan. ')# + str(limit))
+        for x in self.data_dict:
+            if type(self.data_dict[x]) is dict:
+                for xx in self.data_dict[x]:
+                    self.data_dict[x][xx] = self.data_dict[x][xx].fillna(method='ffill', limit = limit)
+            else:
+                self.data_dict[x] = self.data_dict[x].fillna(method='ffill', limit = limit)
+
     def Print_data_columns(self):
         for x in self.data_dict:
             print ("\n# {0}, type = {1}".format(x, type(self.data_dict[x])))
