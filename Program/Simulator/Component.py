@@ -21,7 +21,7 @@ class Component:
 
     def ConvertData(self, a, b):
         '''
-        兩種情況: 一種為Dataframe, 為個股相關 
+        兩種情況: 一種為Dataframe, 為個股相關
                  一種為Series, 為大盤相關
         '''
         if isinstance(a, Component): a = a.data
@@ -36,13 +36,22 @@ class Component:
         elif (type(b) == pd.core.frame.Series and type(a) == pd.core.frame.DataFrame):
             b = pd.DataFrame({c:b for c in a.columns})
 
-        # truncate 
+        # truncate
         if a.index[0] != b.index[0]:
             if a.index[0] > b.index[0]: b = b.loc[a.index[0]:]
             else:                       a = a.loc[b.index[0]:]
         if a.index[-1] < b.index[-1]:   b = b.loc[:a.index[-1]]
         else:                           a = a.loc[:b.index[-1]]
 
+        # Monthly/Quarterly data convert
+        convert_a = False
+        convert_b = False
+        if (a.index[-1] - a.index[0]).days/len(a) > 25: convert_a = True
+        if (b.index[-1] - b.index[0]).days/len(b) > 25: convert_b = True
+        if   convert_a and convert_b is False:
+            a = a.reindex(b.index).fillna(method = 'ffill')
+        elif convert_b and convert_a is False:
+            b = b.reindex(a.index).fillna(method = 'ffill')
 
         return a, b
 
@@ -66,7 +75,7 @@ class Component:
         return Component(~self.data)
 
     # Compare: >, <, >=, <=
-    def __lt__(self, v): #less than < 
+    def __lt__(self, v): #less than <
         a, b = self.ConvertData(self.data, v)
         return Component(a < b)
     def __gt__(self, v): #greater than >
@@ -125,10 +134,9 @@ def delta(data, shift_N = 1):
     data - data.shift(shift_N)
     '''
     data = data - data.shift(shift_N)
-    if type(data) != Component: 
+    if type(data) != Component:
         return Component(data)
     return data
-
 
 # --------------------- #
 #     talib related     #
@@ -148,10 +156,6 @@ talib.abstract.STOCH.info
 def OHLCV_to_dict(OHLCV_data):
     # type 1: many Stocks/DATA
     if type(OHLCV_data) == dict:
-        # type old: normal dict
-        #if len(OHLCV_data) <= 5:
-        #    return {"Data1":OHLCV_data}
-        #else:
         cols = OHLCV_data['High'].columns
         dict_dict_OHLCV = dict()
         for col in cols:
@@ -163,8 +167,8 @@ def OHLCV_to_dict(OHLCV_data):
                 'volume': OHLCV_data['Volume'][col].astype(float)
             }
         return dict_dict_OHLCV
-            
-    # type 2: TWSI (single OHLCV_data)
+
+    # type 2: TWSI/single StockID (single OHLCV_data)
     elif type(OHLCV_data) == pd.core.frame.DataFrame:
         dict_data = {
             'open': OHLCV_data['Open'].astype(float),
@@ -177,7 +181,7 @@ def OHLCV_to_dict(OHLCV_data):
 
 def talib2df(talib_output, index, split = False, column_name_list = None):
     '''
-    split = False, Concate all arr to a Dataframe 
+    split = False, Concate all arr to a Dataframe
     if there is only one array, convert to Series
     '''
     if type(talib_output) == list:
@@ -202,7 +206,7 @@ def talib2df(talib_output, index, split = False, column_name_list = None):
 def talib2component(talib_output, index, split = False, column_name_list = None):
     # convert to df/Series
     talib_output = talib2df(talib_output, index, split, column_name_list)
-    
+
     if type(talib_output) == list:
         ret = []
         for df in talib_output: ret.append( Component(df) )
@@ -222,7 +226,7 @@ def talib_KD(OHLCV_data):
     '''
     logging.warning("Try to use function: talib_Output. You can use help(talib_Output) to get more details.")
     return talib_Output(OHLCV_data, talib.abstract.STOCH)
-    
+
 def talib_BBANDS(OHLCV_data):
     '''
     INFO:
@@ -241,7 +245,7 @@ def talib_Output(OHLCV_data, talib_func, talib_func_parameters = None):
         Run talib function and return Component.
         Note that 'talib_func_parameters' is a dict type.
         You can use the command: talib.abstract.XXX.parameters to get parameters.
-    
+
     EXAMPLE:
         1. KD :
             slowk, slowd = talib_KD(sim.DATA['加權指數'])
@@ -255,13 +259,13 @@ def talib_Output(OHLCV_data, talib_func, talib_func_parameters = None):
     name_list = []
     d_index = []
     Com = []
-    
+
     # Init talib_func paramters, NOTE: Talib set_parameters 有記憶性
-    if talib_func_parameters is None: 
+    if talib_func_parameters is None:
         print('# Talib Function: {0}. Use default parameters. '.format(talib_func.info['display_name']) )
     else:
         talib_func.set_parameters(talib_func_parameters)
-    
+
     # Get OHLCV_data
     OHLCV_data_dict = OHLCV_to_dict(OHLCV_data)
 
@@ -272,11 +276,11 @@ def talib_Output(OHLCV_data, talib_func, talib_func_parameters = None):
         for i, arr in enumerate(talib_output):
             talib_out_list[i].append(arr)
 
-    # Get index 
+    # Get index
     for Key, Value in OHLCV_data_dict.items():
         d_index = Value['close'].index
         break
-        
+
     # convert to Component type
     for arr in talib_out_list:
         Com.append(talib2component(arr, d_index, column_name_list = name_list) )
@@ -297,7 +301,7 @@ class Components_lib:
     '''
     def __init__(self, DATA):
         self._DATA = DATA
-        print("Construct Components_lib.")
+        #print("Construct Components_lib.")
 
     def 小外資_多方口數(self, DATA = None):
         if DATA is None: DATA = self._DATA
@@ -327,36 +331,6 @@ class Components_lib:
         if DATA is None: DATA = self._DATA
         return Component(DATA['小台指_總留倉數']['未沖銷契約數']*2) - self.小台_法人多方口數(DATA) - self.小台_法人空方口數(DATA)
 
-    def 價差(self, DATA = None): # 台指 - 加權指數 
+    def 價差(self, DATA = None): # 台指 - 加權指數
         if DATA is None: DATA = self._DATA
         return Component(DATA['台指期貨_合併']['Close'] - DATA['加權指數']['Close'])
-
-'''   
-
-
-
-def 小外資_多方口數(DATA):
-    return Component( DATA['期貨法人']['大台_外資']['多方未平倉口數'] - DATA['台指期貨_大額交易人']['前五大特定法人交易人買方'])
-
-def 小外資_空方口數(DATA):
-    return Component( DATA['期貨法人']['大台_外資']['空方未平倉口數'] - DATA['台指期貨_大額交易人']['前五大特定法人交易人賣方'])
-
-def 小台_法人多方口數(DATA):
-    期貨法人 = DATA['期貨法人']
-    return Component(期貨法人['小台指_外資']['多方未平倉口數'] + 期貨法人['小台指_投信']['多方未平倉口數'] \
-                   + 期貨法人['小台指_自營商']['多方未平倉口數'] )
-
-def 小台_法人空方口數(DATA):
-    期貨法人 = DATA['期貨法人']
-    return Component(期貨法人['小台指_外資']['空方未平倉口數'] + 期貨法人['小台指_投信']['空方未平倉口數'] \
-                   + 期貨法人['小台指_自營商']['空方未平倉口數'] )
-
-def 散戶多空(DATA): # 散戶指標
-    return 小台_法人空方口數(DATA) - 小台_法人多方口數(DATA)
-
-def 散戶留倉數(DATA):
-    return Component(DATA['小台指_總留倉數']['未沖銷契約數']*2) - 小台_法人多方口數(DATA) - 小台_法人空方口數(DATA)
-
-def 價差(DATA): # 台指 - 加權指數 
-    return Component(DATA['台指期貨_合併']['Close'] - sim.DATA['加權指數']['Close'])
-'''

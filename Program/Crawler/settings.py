@@ -4,10 +4,10 @@ import os
 PKL_path = os.path.abspath(""+"../../Finance_data/Pickle")
 FD_path = os.path.abspath(""+"../../Finance_data/Parse")
 
-Func_l = ['Institutional_investors', 'TaiExchange', 'TaiExchange_OHLC', \
-          'Taifutures', 'Taifutures_Investors', 'Taifutures_LargeTrade', 'MTX', \
-          'MTX_Investors', 'TX_Investors', \
-          'Stock_Price', 'Stock_Investors']
+#Func_l = ['Institutional_investors', 'TaiExchange', 'TaiExchange_OHLC', \
+#          'Taifutures', 'Taifutures_Investors', 'Taifutures_LargeTrade', 'MTX', \
+#          'MTX_Investors', 'TX_Investors', \
+#          'Stock_Price', 'Stock_Investors', 'Stock_MonthlyRevenue']
 
 Crawl_dict = {'Institutional_investors': {'start':'20040407','date_format':'%Y%m%d',   'date_name': '日期'    },
               'TaiExchange':             {'start':'20000101','date_format':'%Y-%m-%d', 'date_name': '日期'    },
@@ -21,13 +21,15 @@ Crawl_dict = {'Institutional_investors': {'start':'20040407','date_format':'%Y%m
               # Stocks
               'Stock_Price':             {'start':'20050114','date_format':'%Y%m%d',   'date_name': '日期'     },
               'Stock_Investors':         {'start':'20120502','date_format':'%Y%m%d',   'date_name': '日期'     },
+              'Stock_MonthlyRevenue':    {'start':'20130101','date_format':'%Y%m%d',   'date_name': '日期'     },
+              #'Financial_C_Income':      {'start':'20130101','date_format':'%Y%m%d',   'date_name': '日期'     },
               }
 '''
-# Question: How to add new crawler function?
-    1. Update Func_l, Crawl_dict
+# Question 1: How to add new crawler function?
+    1. Update Crawl_dict
     2. Update Wrapper
-    3. Update record.txt
-    4. Make new dirctory
-    5. Update Check_miss_data 
+    (3. Update record.txt)
+    (4. Make new dirctory)
+    5. Update CHECK_MISSING_DATA
     6. Update datapreprocessing
 '''

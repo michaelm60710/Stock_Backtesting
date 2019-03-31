@@ -18,19 +18,19 @@ def trimAllColumns(df):
 
 def series_to_int_str(x):
     '''
-    Convert series to str type without decimal (floating) 
+    Convert series to str type without decimal (floating)
     '''
     if type(x) != str:
         return str(int(x))
     else:
         # Note: str(int(float('1.0'))) = '1'
-        try: 
+        try:
             num = float(x)
         except ValueError:
             return x
         return str(int(num))
 
-# Find lastest date 
+# Find lastest date
 def Lastest_date(path, dateparse_str = '%Y/%m/%d', date_name = '日期'):
     '''
     find lastest date.
@@ -42,11 +42,11 @@ def Lastest_date(path, dateparse_str = '%Y/%m/%d', date_name = '日期'):
         if not file.endswith(".csv"): continue
         if file.endswith("year.csv"): continue
 
-        df = pd.read_csv(path + file, encoding="big5", parse_dates=[date_name], date_parser=dateparse, thousands=',') 
+        df = pd.read_csv(path + file, encoding="big5", parse_dates=[date_name], date_parser=dateparse, thousands=',')
 
         if len(df.index) == 0: continue
         date = df[date_name].iloc[-1].to_pydatetime()
-        
+
         if date > last_day:
             last_day = date
 
@@ -75,7 +75,7 @@ def Concate_all_df(path, dateparse_str = '%Y/%m/%d', date_name = '日期', Only_
 
     if len(dfs) < 1: return None
     frame = (pd.concat(dfs, ignore_index=True)).sort_values(by='time').drop_duplicates().set_index('time')
-    
+
     if not Only_return_time:
         frame = frame.apply(pd.to_numeric, errors='ignore')  # Note: some variable type is float, if it convert to str directly, it will have decimal point.
         frame = trimAllColumns(frame)
@@ -94,12 +94,12 @@ def Concate_df(path, dateparse_str = '%Y/%m/%d', date_name = '日期'):
 
     if len(dfs) < 1: return None
     frame = (pd.concat(dfs, ignore_index=True)).sort_values(by=date_name).set_index(date_name)
-    frame.index.names = ['time'] 
+    frame.index.names = ['time']
     return frame
 
 # Merge CSV files. Generate new files (*_year.csv) and remove old files
 def Merge_csv_by_year(df_all, path):
-    
+
     import datetime
     dateparse_year = lambda x: pd.datetime.strptime(x, '%Y-%m-%d')
     first_year = int(df_all.index[0].strftime('%Y'))
@@ -125,7 +125,7 @@ def Merge_csv_by_year(df_all, path):
 
         df.to_csv(write_path, encoding = "big5", index = True)
         print('write the file: ' + file_name)
-    
+
     # remove original files
     for file in  os.listdir(path):
         if not file.endswith(".csv"): continue
@@ -133,28 +133,17 @@ def Merge_csv_by_year(df_all, path):
         os.remove(path+ file)
         print ("rm " + file)
 
-
-# modify wrong csv format
-'''
-def modify(path ):
-    df = pd.read_csv(path, encoding="big5", thousands=',')
-    df['time'] = np.where(df['time'].isnull(), df['Unnamed: 0'], df['time'])
-    df['time'] = pd.to_datetime(df['time'])
-    df = df.sort_values(by='time').set_index('time').drop(['Unnamed: 0'], axis=1)
-    df.to_csv(path, encoding = "big5", index = True)
-    print(df.head())
-'''
-
 def Check_miss_data():
     import datetime
     from dateutil.relativedelta import relativedelta
-    from Crawler import  Wrapper
 
     # Merge all date_index
     origin_dict = {}
     all_index = {}
     d_index = pd.DatetimeIndex([]).rename('time')
     for func_name, value in Crawl_dict.items():
+
+        if func_name == 'Stock_MonthlyRevenue': continue # don't need to consider Stock_MonthlyRevenue
         path = FD_path + "/" + func_name +"/"
         origin_dict[func_name] = Concate_all_df(path, value['date_format'], value['date_name'], Only_return_time = True)
         all_index[func_name]   = origin_dict[func_name].index.drop_duplicates()
@@ -170,70 +159,49 @@ def Check_miss_data():
     # find the different date
     dif_id = {}
     for func_name, nouse in Crawl_dict.items():
-        
+
+        if func_name == 'Stock_MonthlyRevenue': continue # don't need to consider Stock_MonthlyRevenue
         dif = d_index.difference(all_index[func_name])
         first_date = all_index[func_name][0]
         end_date = all_index[func_name][-1]
-        
+
         # trim date
         dif_id[func_name] = dif[(dif > first_date) & (dif < end_date)]
-        
+
         print ("# FUNCTION NAME: " + func_name)
         print ("\t# Length of missing data: " + str(len(dif_id[func_name])))
         if len(dif_id[func_name]) > 0:
             print ("\t# Missing date: " + str(dif_id[func_name]))
 
-    # crawl missing date
-    for func in dif_id.keys():
-        # Month
-        if func == 'Taifutures_LargeTrade' or func == 'Taifutures' \
-        or func == 'TaiExchange_OHLC' or func == 'TaiExchange' or func == 'MTX': 
-            month_id = dif_id[func].copy()
-            month_id = np.unique( month_id.map(lambda x: x.replace(day = 1)) )
-            for date in month_id:
-                start = str(date.date()).replace("-", "")
-                end = str(date.date() + relativedelta(months= 1)).replace("-", "")
-
-                Wrapper(start, end, [ func ] )
-        # Date
-        elif func == 'Institutional_investors' or func == 'Taifutures_Investors' \
-        or func == 'MTX_Investors' or func == 'TX_Investors' \
-        or func == 'Stock_Price' or func == 'Stock_Investors':
-            for date in dif_id[func]: 
-                start = str(date.date()).replace("-", "")
-                end = start
-
-                Wrapper(start, end, [ func ] )
-        else:
-            print ("ERROR: didn't define " + func + " in def Check_miss_data")
-
+    return dif_id
 
 
 ####------------------------------------------------------------------------------------------------------------------------------
 ####------------------------------------------------------------------------------------------------------------------------------
 ####------------------------------------------------------------------------------------------------------------------------------
-#### Data_preprocessing and Maintain pickle
+#### Data_preprocessing and  pickle maintenance
 import pickle, re
 class Data_preprocessing:
-    def __init__(self, update = True, rebuild = False):
+    def __init__(self, update = True, rebuild = False, verbose = True):
         '''
         rebuild: rebuild pkl
         update: only update partial data. more efficient.
         '''
         self.origin_dict = {}
         self.data_dict = {}
+        self.verbose = verbose
 
         if rebuild:
-            print ("# Data preprocessing")
+            if self.verbose: print ("# Data preprocessing")
             self.update_pkl()
             self.data_preprocessing()
         elif update:
-            print ("# Update data")
-            self.load_pkl() 
+            if self.verbose: print ("# Update data")
+            self.load_pkl()
             self.update_pkl(Only_unprocess_data = True)
             self.data_preprocessing()
         else:
-            print ("# Read pickle ")
+            if self.verbose: print ("# Read pickle ")
             self.load_pkl()
 
         # Debug & Check
@@ -241,6 +209,7 @@ class Data_preprocessing:
 
     def read_csv_files(self, Only_unprocess_data = False):
         for func_name, value in Crawl_dict.items():
+            #if func_name == 'Stock_MonthlyRevenue': continue # temporary
             path = FD_path + "/" + func_name +"/"
 
             if not Only_unprocess_data:
@@ -250,13 +219,14 @@ class Data_preprocessing:
                 # Only concate new data after merging csv
                 last_origin_date = self.origin_dict[func_name].index[-1].to_pydatetime() + datetime.timedelta(days=1)
                 new_df = Concate_df(path, value['date_format'], value['date_name'])
+                if new_df is None: continue
                 self.origin_dict[func_name] = pd.concat([self.origin_dict[func_name], new_df[last_origin_date:]])
 
 
-            print("    " + func_name)
+            if self.verbose: print("    " + func_name)
 
     def update_pkl(self, Only_unprocess_data = False):
-        print("Update origin data pkl.")
+        if self.verbose: print("Update origin data pkl.")
         self.read_csv_files(Only_unprocess_data)
         file = open(PKL_path+'/origin_finance_data.pkl', 'wb')
         pickle.dump(self.origin_dict, file)
@@ -264,28 +234,28 @@ class Data_preprocessing:
     def load_pkl(self):
         assert os.path.isfile(PKL_path+'/origin_finance_data.pkl'), "origin_finance_data.pkl doesn't exist. " \
                                       +"Please try to use command: Data_preprocessing(rebuild = True)"
-        print ("load origin pkl file.")
+        if self.verbose: print ("load origin pkl file.")
         with open(PKL_path+'/origin_finance_data.pkl', 'rb') as file:
             self.origin_dict = pickle.load(file)
-        
+
         if not os.path.isfile(PKL_path+'/finance_data.pkl'):
             print ("WARNING: finance_data.pkl doesn't exist. " \
                   +"Try to use Data_preprocessing.data_preprocessing() to generate the file first.")
             return
-            
-        print ("load finance data pkl file.")
+
+        if self.verbose: print ("load finance data pkl file.")
         with open(PKL_path+'/finance_data.pkl', 'rb') as file:
             self.data_dict = pickle.load(file)
-            
+
     def data_preprocessing(self):
-        
+
         #######################################
         # 1. Preprocess Taifutures_LargeTrade #
         #######################################
         temp = self.origin_dict['Taifutures_LargeTrade'].copy()
         temp['交易人類別'] = temp['交易人類別'].apply(series_to_int_str)
         temp['到期月份(週別)'] = temp['到期月份(週別)'].apply(series_to_int_str)
-        
+
         # 一般
         temp_0 = temp[temp['交易人類別'] == '0']
         temp_0 = temp_0[((temp_0['到期月份(週別)'].str.slice(4,5) == '0') | (temp_0['到期月份(週別)'].str.slice(4,5) == '1')) \
@@ -305,7 +275,7 @@ class Data_preprocessing:
 
 
         self.data_dict['台指期貨_大額交易人'] = pd.concat([temp_0, temp_1], axis=1).astype(float)
-        
+
         #######################################
         # 2. Preprocess TaiExchange           #
         #######################################
@@ -315,7 +285,7 @@ class Data_preprocessing:
                             "最低指數": "Low", "收盤指數": "Close"})
         temp = temp.drop(['發行量加權股價指數'], axis = 1)
         self.data_dict['加權指數'] = temp
-        
+
         #######################################
         # 3. Preprocess TaiFutures            #
         #######################################
@@ -335,9 +305,9 @@ class Data_preprocessing:
 
             if i == 0: self.data_dict['台指期貨_一般'] = temp
             else:      self.data_dict['台指期貨_盤後'] = temp
-            
+
         self.data_dict['台指期貨_盤後'] = self.data_dict['台指期貨_盤後'].drop(['結算價', '未沖銷契約數'], axis = 1)
-        
+
         #######################################
         # 4. Preprocess TaiFutures (Merge)    #
         #######################################
@@ -382,7 +352,7 @@ class Data_preprocessing:
         # Remove 夜盤 columns
         origin = origin.drop(origin.columns[origin.columns.str.contains('_夜盤')], axis = 1)
         self.data_dict['台指期貨_合併'] = origin.astype(int)
-        
+
         #######################################
         # 5. Preprocess TaiFutures Investors  #
         #######################################
@@ -398,7 +368,7 @@ class Data_preprocessing:
         self.data_dict['期貨法人']['小台指_投信'] = MTX_temp[MTX_temp['身份別'] == '投信']
         self.data_dict['期貨法人']['小台指_自營商'] = MTX_temp[MTX_temp['身份別'] == '自營商']
         self.data_dict['期貨法人']['小台指_外資'] = MTX_temp[MTX_temp['身份別'] == '外資及陸資']
-        
+
         self.data_dict['期貨法人']['大台_投信'] = TX_temp[TX_temp['身份別'] == '投信']
         self.data_dict['期貨法人']['大台_自營商'] = TX_temp[TX_temp['身份別'] == '自營商']
         self.data_dict['期貨法人']['大台_外資'] = TX_temp[TX_temp['身份別'] == '外資及陸資']
@@ -416,15 +386,15 @@ class Data_preprocessing:
         # 7. Preprocess Stocks                #
         #######################################
         self.data_dict['台股個股'] = dict()
-        stock_df_list = ['Stock_Price', 'Stock_Investors']
+        stock_df_list = ['Stock_Price', 'Stock_Investors', 'Stock_MonthlyRevenue']
         for stock_df in stock_df_list:
             stock_df = self.origin_dict[stock_df]
             Data_Name_list =  stock_df['Data_Name'].drop_duplicates().tolist()
             for data_name in Data_Name_list:
                 frame = stock_df[stock_df['Data_Name'] == data_name]
-                frame = frame.apply(pd.to_numeric, errors='coerce') 
+                frame = frame.apply(pd.to_numeric, errors='coerce')
                 self.data_dict['台股個股'][data_name] = frame.drop(['Data_Name'], axis = 1)
-        
+
         # rename
         self.data_dict['台股個股']["法人總計"] = self.data_dict['台股個股']["總計"].copy()
         del self.data_dict['台股個股']["總計"]
@@ -437,13 +407,13 @@ class Data_preprocessing:
         #######################################
         # 9. Rewrite finance data pkl         #
         #######################################
-        print ("update finance data pkl.")
+        if self.verbose: print ("update finance data pkl.")
         file = open(PKL_path+'/finance_data.pkl', 'wb')
         pickle.dump(self.data_dict, file)
-        
+
     def Check(self):
 
-        # check duplicated 
+        # check duplicated
         from Check import Check_duplicated_date
         for x in self.data_dict:
             if type(self.data_dict[x]) is dict:
@@ -455,7 +425,7 @@ class Data_preprocessing:
     def FillNan(self):
         # use fillna(method='ffill', limit = 5)
         limit = 5
-        print('# Fill Nan. ')# + str(limit))
+        #print('# Fill Nan')
         for x in self.data_dict:
             if type(self.data_dict[x]) is dict:
                 for xx in self.data_dict[x]:
@@ -470,8 +440,7 @@ class Data_preprocessing:
                 print ("\tKeys: " + str(list(self.data_dict[x].keys())) + "\n")
             else:
                 print ("\tColumns: " + str(self.data_dict[x].columns.values) + "\n")
- 
+
 ####------------------------------------------------------------------------------------------------------------------------------
 ####------------------------------------------------------------------------------------------------------------------------------
 ####------------------------------------------------------------------------------------------------------------------------------
-   

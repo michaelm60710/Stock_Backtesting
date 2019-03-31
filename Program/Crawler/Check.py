@@ -24,14 +24,22 @@ class Record:
             assert len(line) == 3, len(line) 
             self.record_data[line[0]] = (line[1], line[2])
 
+        # check crawl_dict new keys
+        for func_name, value in Crawl_dict.items():
+            if self.record_data.get(func_name) is None:
+                self.record_data[func_name] = (value['start'], value['start'])
+                # build directory
+                Write_directory = FD_path + "/" + func_name
+                if not os.path.exists(Write_directory):
+                    os.makedirs(Write_directory)
+
     def init_record_file(self):
         # assert os.path.isfile(self.file_path) != True, self.file_path + " already exists."
 
         self.record_data = {}
         for func_name, value in Crawl_dict.items():
             self.record_data[func_name] = (value['start'], value['start'])
-        # for index, (value1, value2) in enumerate(zip(Func_l, start_l)):
-        #     self.record_data[value1] = (value2, value2)
+        
         self.updatefile()
 
     def updatefile(self):
@@ -62,14 +70,14 @@ class Record:
             # update record.txt #
             if int(latest_date) > int(self.record_data[func_name][1]):
 
-                print (func_name + ": End date = " + latest_date)
+                print ("\t" + func_name + ": End date = " + latest_date)
                 self.record_data[func_name] = (self.record_data[func_name][0], latest_date)
 
             # merge command: merge csv after updating record.txt #
             if merge_CSV:
                 Merge_csv_by_year(df, path)
 
-        # merge command: also need to update pkl files (S0119)
+        # merge command: also need to update pkl files (S0119) #
         if merge_CSV:
             from Packing import Data_preprocessing
             Data_preprocessing(rebuild = True)

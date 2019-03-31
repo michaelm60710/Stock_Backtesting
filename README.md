@@ -45,7 +45,7 @@
 > 
 > Plotly 新增 Trade_info (Only for stocks Mode)
 
-2. Component
+2.  Component
 
 > 優化 Operator
 > 
@@ -54,8 +54,25 @@
 > 新增 talib_Output
 > 
 > 新增 components_lib
+> 
 
 3. Example
 
 >
 > 新增 backtest\_Stocks_example1
+> 
+> # Update 1.2V_S0331
+
+1. Crawler
+
+>  Add Monthly_revenue data
+> 
+>  Re-write Crawler data structure
+
+2. Simulator
+
+>  Update sim.Iplotly
+> 
+>  Update structure
+>
+ 
