@@ -77,6 +77,44 @@ class Iplot(Sim_func):
         return wrapper
 
     @Sim_func._input_wrapper
+    def P_Add_BBAND(self, fig = None, StockID = None, Mode = 'futures', start_date = None, end_date = None):
+        # settings
+        if Mode == 'futures':
+            OHLC_data = self.DATA['加權指數']
+        else:
+            OHLC_data = self._GetStock_OHLCV_data(StockID)
+
+        if fig is None:
+            fig = dict( data= [dict()], layout=dict() )
+
+        if start_date is None: start_date = OHLC_data.index[0]
+        if end_date   is None: end_date   = OHLC_data.index[-1]
+
+        talib_func_parameters = {'timeperiod':20, 'nbdevup':2, 'nbdevdn':2, 'matype':talib.MA_Type.T3 }
+        upperband, middleband, lowerband = talib_Output(OHLC_data, talib.abstract.BBANDS, talib_func_parameters = talib_func_parameters)
+        upperband = upperband.data.truncate(start_date, end_date, axis = 0)
+        lowerband = lowerband.data.truncate(start_date, end_date, axis = 0)
+
+        # add upperBBAND & lowerBBAND
+        fig['data'].append( dict(
+                type = 'scatter',
+                y = upperband,
+                x = upperband.index,
+                yaxis='y1',
+                name='UpperBAND'
+            ) )
+        fig['data'].append( dict(
+                type = 'scatter',
+                y = lowerband,
+                x = lowerband.index,
+                yaxis='y1',
+                name='LowerBAND'
+            ) )
+
+        return fig
+
+
+    @Sim_func._input_wrapper
     def P_Add_KD(self, fig = None, StockID = None, Mode = 'futures', start_date = None, end_date = None):
 
         # settings
@@ -161,13 +199,18 @@ class Iplot(Sim_func):
         return fig
 
     @Sim_func._input_wrapper
-    def P_Add_3_Investors(self, fig = None, StockID = None, start_date = None, end_date = None):
+    def P_Add_3_Investors(self, fig = None, StockID = None, Mode = 'futures', start_date = None, end_date = None):
 
         # settings
         # self.logger.error(" No support future mode. func(P_Add_3_Investors)")
-        外資 = self.DATA['台股個股']['外資'][StockID]
-        投信 = self.DATA['台股個股']['投信'][StockID]
-        自營商 = self.DATA['台股個股']['自營商'][StockID]
+        if Mode == 'futures':
+            外資 = self.DATA['加權指數']['外資買賣差額']
+            投信 = self.DATA['加權指數']['投信買賣差額']
+            自營商 = self.DATA['加權指數']['自營商買賣差額']
+        else:
+            外資 = self.DATA['台股個股']['外資'][StockID]
+            投信 = self.DATA['台股個股']['投信'][StockID]
+            自營商 = self.DATA['台股個股']['自營商'][StockID]
 
         if start_date is None: start_date = 外資.index[0]
         if end_date   is None: end_date   = 外資.index[-1]

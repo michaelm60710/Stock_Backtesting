@@ -9,7 +9,7 @@ import datetime
 from dateutil.relativedelta import relativedelta
 
 from settings import Crawl_dict, FD_path
-from Check import *
+from Check import Record, Check_columns, Check_directory_files
 
 #Global variables
 global ua  # 偽瀏覽器
@@ -39,14 +39,19 @@ class Crawler:
 
 
 
-    def UPDATE(self):
+    def UPDATE(self, must_update = False):
         today = self.Get_today()
 
-        #1.  update record first
-        print ("# 1. Update End date in record.txt")
         self.record = Record(FD_path + '/record.txt')
-        self.record.readfile()
-        self.record.update_latest_date()
+
+        #0. Check update date
+        if not must_update and self.record.update_date >= self.str_to_date(today):
+            print("# Already updated to {0}".format(self.record.update_date.strftime("%Y%m%d")))
+            return
+
+        #1.  Update record first
+        print ("# 1. Update END date. ")
+        self.record.update_latest_date(update_file = False)
 
         #2.  Update data
         print ("# 2. Update data.")
@@ -57,6 +62,9 @@ class Crawler:
             start_date = str(start_date.date()).replace("-", "")
             self.Wrapper(start_date, today, [ func_data['Func_name'] ] )
 
+        #3. Update date and record
+        self.record.update_date_func(update_date = today, update_file = True)
+
         print ("\n# 3. Done.")
 
     def MERGE(self):
@@ -64,7 +72,7 @@ class Crawler:
         # It will also update record.txt
         self.record = Record(FD_path + '/record.txt')
         self.record.readfile()
-        self.record.update_latest_date(True)
+        self.record.update_latest_date(merge_CSV = True)
 
     def CHECK_MISSING_DATA(self):
         # 1. Check Missing Data
@@ -98,8 +106,12 @@ class Crawler:
                 print ("ERROR: didn't define " + func + " in def Check_miss_data")
 
         # 2. Merge
-        print ("# 2. Merge data.")
-        self.MERGE()
+        reply = str(input('\n# Do you want to merge/update the csv/pkl files ? ' +
+                  'It may spend a little time (y/n): ')).lower().strip()
+
+        if reply != 'n':
+            print ("# 2. Merge data.")
+            self.MERGE()
 
     def REBUILD(self):
         reply = str(input('This command will remove all the data from the directory: Finance_data/Parse ' +
@@ -144,6 +156,22 @@ class Crawler:
 
     def str_to_date(self, string, formate = '%Y%m%d'):
         return datetime.datetime.strptime(str(string), formate)
+
+    def Gen_xQuarterly(self, start_year:int, start_quarter:int, end_year:int, end_quarter:int, Func):
+        '''
+            example: Gen_xQuarterly(2016, 1, 2018, 1, Financial_Income)
+        '''
+        if str(start_year)+str(start_quarter) > str(end_year)+str(end_quarter): return
+        print("\n# {0}: {1}_{2} to {3}_{4}".format(Func.__name__, start_year, start_quarter, end_year, end_quarter) )
+
+        for year in range(start_year, end_year+1):
+            if year == start_year: s_q = start_quarter
+            else:                  s_q = 1
+            if year == end_year:   e_q = end_quarter
+            else:                  e_q = 4
+
+            for season in range(s_q, e_q+1):
+                Func(year = year, season = season, write = 1)
 
     def Gen_xMonth(self, start_date, end_date, month, Func, Func_type = ''):
         '''
@@ -200,8 +228,8 @@ class Crawler:
             A wrapper run other functions in Crawler.py
         [USAGE]
             start & end can be int or string type
-        Example:
-            Wrapper('20181101', '20181109', [Institutional_investors, TaiExchange])
+            Example:
+                Wrapper('20181101', '20181109', [Institutional_investors, TaiExchange])
 
         [RETURN]
 
@@ -223,22 +251,54 @@ class Crawler:
                 self.Gen_xMonth(start, end, 1, TaiExchange_OHLC, "YM")
             elif func_name == 'TaiExchange':
                 self.Gen_xMonth(start, end, 1, TaiExchange, "YM")
-            elif func_name == 'Stock_MonthlyRevenue':
-                end   = self.str_to_date(end)
-                start = self.str_to_date(start)
-                if end.day > 10: end -= relativedelta(months= 1)
-                else           : end -= relativedelta(months= 2)
-                if start.month != end.month and start < end:
-                    self.Gen_xMonth(start, end, 1, Stock_MonthlyRevenue, "YM")
-            elif func_name == 'Financial_C_Income':
-                # quarterly
-                pass
             elif func_name == 'Institutional_investors':
                 self.Gen_xDay(start, end, Institutional_investors)
             elif func_name == 'Stock_Price':
                 self.Gen_xDay(start, end, Stock_Price)
             elif func_name == 'Stock_Investors':
                 self.Gen_xDay(start, end, Stock_Investors)
+            elif func_name == 'Stock_MonthlyRevenue':
+                end   = self.str_to_date(end)
+                start = self.str_to_date(start)
+                if end.day > 10: end -= relativedelta(months= 1)
+                else           : end -= relativedelta(months= 2)
+
+                if start.month != end.month and start < end:
+                    start = str(start.date()).replace("-", "")
+                    end   = str(end.date()).replace("-", "")
+                    self.Gen_xMonth(start, end, 1, Stock_MonthlyRevenue, "YM")
+            elif func_name in ['Financial_Income', 'Financial_Balance_Sheet']:
+
+                # quarterly
+                def year_season(date:str):
+                    '''
+                        return year, season
+                        Note:
+                            season = 1 -> '0516'
+                            season = 2 -> '0815'
+                            season = 3 -> '1115'
+                            season = 4 -> '0401'
+                    '''
+                    m_d = date[4:]
+                    year = int(date[:4])
+
+                    if   m_d < '0401': return year-1, 3
+                    elif m_d < '0516': return year-1, 4
+                    elif m_d < '0815': return year  , 1
+                    elif m_d < '1115': return year  , 2
+                    elif m_d >= '1115':return year  , 3
+
+                # first data already exist
+                s_year, s_season = year_season(start)
+                if s_season == 4: s_year += 1
+                s_season = s_season%4 + 1
+
+                e_year, e_season = year_season(end)
+                if   func_name == 'Financial_Income':        FUNC = Financial_Income
+                elif func_name == 'Financial_Balance_Sheet': FUNC = Financial_Balance_Sheet
+                else: raise AssertionError("Error: wrong to use the " + func_name )
+
+                self.Gen_xQuarterly(s_year, s_season, e_year, e_season, FUNC)
             else:
                 raise AssertionError("Error: didn't define " + func_name )
 
@@ -271,15 +331,8 @@ def Institutional_investors(YMD, write=0):
     Foreign_Investors_path = FD_path + "/Institutional_investors"
     write_path = Foreign_Investors_path + "/" + YMD + ".csv"
 
-    if(write == 1): #check directory & file
-        if not os.path.exists(FD_path):
-            print("The directory: " + FD_path +" is not exist.")
-            return 0
-        if not os.path.exists(Foreign_Investors_path):
-            os.makedirs(Foreign_Investors_path)
-        if os.path.isfile(write_path):
-            print('the file: ' + YMD + ' exists!')
-            return 0
+    if write == 1 and Check_directory_files(FD_path, Foreign_Investors_path, write_path) == 0:
+        return 0
 
     url = "http://www.twse.com.tw/fund/BFI82U?response=csv&dayDate="+YMD+"&type=day&_=1525186484440"
 
@@ -308,7 +361,7 @@ def Institutional_investors(YMD, write=0):
                                   '投信買賣差額': 投信_volume})
         df['日期'] = [YMD]
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + YMD)
 
@@ -346,12 +399,8 @@ def TaiExchange(year, month, write = 0):
     TaiEx2_path = FD_path + "/TaiExchange"
     write_path = TaiEx2_path + "/" + year + "_" + month + ".csv"
 
-    if(write == 1): #check directory & file
-        if not os.path.exists(FD_path):
-            print("The directory: " + FD_path +" is not exist.")
-            return 0
-        if not os.path.exists(TaiEx2_path):
-            os.makedirs(TaiEx2_path)
+    if write == 1 and Check_directory_files(FD_path, TaiEx2_path) == 0:
+        return 0
 
     url = "http://www.twse.com.tw/exchangeReport/FMTQIK?response=csv&date=" + year + month + "01&_=1525251000849"
 
@@ -374,14 +423,14 @@ def TaiExchange(year, month, write = 0):
         df['日期'] = ['-'.join(tup[1] if(tup[0]!=0) else str(int(tup[1])+1911)
                         for tup in enumerate(date1.split('/'))) for date1 in df['日期'] ]
 
-        if(write == 1): #write the file
+        if write == 1 and len(df) != 0: #write the file
             if os.path.isfile(write_path):
                 read_df = pd.read_csv(write_path, encoding='big5')
                 if(len(read_df) < len(df)):
                     df.to_csv(write_path, encoding='big5', index = False)
                     print('update the file: ' + year + "_" + month)
                 else:
-                    print('the file: ' + year + "_" + month + ' exists and don\'t need to update!')
+                    print('the file: ' + year + "_" + month + ' exists and doesn\'t need to update!')
             else:
                 df.to_csv(write_path, encoding='big5', index = False)
                 print('write the file: ' + year + "_" + month)
@@ -420,15 +469,8 @@ def TaiExchange_OHLC(year, month, write = 0):
     TaiEx_path = FD_path + "/TaiExchange_OHLC"
     write_path = TaiEx_path + "/" + year + "_" + month + ".csv"
 
-    if(write == 1): #check directory & file
-        if not os.path.exists(FD_path):
-            print("The directory: " + FD_path +" is not exist.")
-            return 0
-        if not os.path.exists(TaiEx_path):
-            os.makedirs(TaiEx_path)
-        #if os.path.isfile(write_path):
-        #    print('the file: ' + year + "_" + month + ' exists!')
-        #    return 0
+    if write == 1 and Check_directory_files(FD_path, TaiEx_path) == 0:
+        return 0
 
     url = 'http://www.twse.com.tw/indicesReport/MI_5MINS_HIST?response=csv&date=' + year + month + '01&_=1522825377229';
 
@@ -449,14 +491,14 @@ def TaiExchange_OHLC(year, month, write = 0):
         df['日期']  = ['-'.join(tup[1] if(tup[0]!=0) else str(int(tup[1])+1911)
                            for tup in enumerate(date1.split('/'))) for date1 in df['日期'] ]
 
-        if(write == 1): #write the file
+        if write == 1 and len(df) != 0: #write the file
             if os.path.isfile(write_path):
                 read_df = pd.read_csv(write_path, encoding='big5')
                 if(len(read_df) < len(df)):
                     df.to_csv(write_path, encoding='big5', index = False)
                     print('update the file: ' + year + "_" + month)
                 else:
-                    print('the file: ' + year + "_" + month + ' exists and don\'t need to update!')
+                    print('the file: ' + year + "_" + month + ' exists and doesn\'t need to update!')
             else:
                 df.to_csv(write_path, encoding='big5', index = False)
                 print('write the file: ' + year + "_" + month)
@@ -529,7 +571,7 @@ def Taifutures(start, end, write = 0 , id_select = 'TX'):
                        '漲跌價', '漲跌%','成交量', '結算價', '未沖銷契約數', '交易時段']
         df = Check_columns(df.columns.values, filter_list, df)
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + start + " to " + end)
 
@@ -595,7 +637,7 @@ def Taifutures_Investors(start, end, write = 0 ):
                        '空方未平倉口數','空方未平倉契約金額(百萬元)', '多空未平倉口數淨額', '多空未平倉契約金額淨額(百萬元)']
         df = Check_columns(df.columns.values, filter_list, df)
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + start + " to " + end)
 
@@ -662,7 +704,7 @@ def Taifutures_LargeTrade(start, end, write = 0 ):
         df['商品(契約)'] = df['商品(契約)'].str.strip()
         df = df[df['商品(契約)'] == 'TX']
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + start + " to " + end)
 
@@ -742,7 +784,7 @@ def MTX_Investors(start, end, write = 0, id_select = 'MXF'):
                        '商品名稱']
         df = Check_columns(df.columns.values, filter_list, df)
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + start + " to " + end)
 
@@ -837,7 +879,7 @@ def Stock_Price(YMD, write = 0):
         df.insert(0, 'Data_Name', df.index)
         df.insert(0, '日期', YMD)
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: ' + YMD)
 
@@ -1029,7 +1071,7 @@ def Stock_MonthlyRevenue(year, month, write = 0):
         df.insert(0, 'Data_Name', df.index)
         df.insert(0, '日期', date)
 
-        if(write == 1):#write the file
+        if write == 1 and len(df) != 0:#write the file
             df.to_csv(write_path, encoding='big5', index = False)
             print('write the file: ' + date[:6])
 
@@ -1043,8 +1085,8 @@ def Stock_MonthlyRevenue(year, month, write = 0):
         return 0
 
 ####------------------------------------------------------------------------------------------------------------------------------
-#個股財報:綜合損益 # Not ready (S0331)
-def Financial_C_Income(year, season, write = 0):
+#個股財報: 1.綜合損益表: 一般行業的 '營收', '毛利', '營業利益', '稅前淨利', '稅後淨利', '每股盈餘', '證券代號', '季'
+def Financial_Income(year, season, write = 0):
     '''
     [OBJECTIVE]
     Parsinging Financial_statements:
@@ -1053,11 +1095,13 @@ def Financial_C_Income(year, season, write = 0):
     [USAGE]
     year/season is string type, write is boolean(1 or 0)
     Example:
-        example: Financial_statements_C_Income('2018', '3', 1)
+        example: Financial_Income('2018', '3', 1)
 
     [RETURN]
         A dataframe
     [NOTE]
+        # 先只考慮一般行業(Without 金控, 銀行&票券, 保險, 證券業)
+
         營業費用 = 生產製造產品時所產生的費用 (ex: 購買原物料、包裝、運送)
         營業成本 = 出售商品或提供勞務所負擔之成本 (ex: 員工薪資、租金)
         營業外收支 = 公司的營業項目以外的活動 (ex: 利息收支、投資收益或損失)
@@ -1077,14 +1121,14 @@ def Financial_C_Income(year, season, write = 0):
         return 0
 
     if   int(season) == 1: YMD = str(origin_year) + '0516'
-    elif int(season) == 2: YMD = str(origin_year) + '0901'
-    elif int(season) == 3: YMD = str(origin_year) + '1130'
-    elif int(season) == 4: YMD = str(origin_year) + '0401'
+    elif int(season) == 2: YMD = str(origin_year) + '0815'
+    elif int(season) == 3: YMD = str(origin_year) + '1115'
+    elif int(season) == 4: YMD = str(origin_year+1) + '0401'
 
-    Finance_Comprehensive_Income_path = FD_path + "/Finance_ComprehensiveIncome"
-    write_path = "{0}/{1}_{2}.csv".format(Finance_Comprehensive_Income_path, origin_year, season)
+    Finance_Income_path = FD_path + "/Financial_Income"
+    write_path = "{0}/{1}_{2}.csv".format(Finance_Income_path, origin_year, season)
 
-    if write == 1 and Check_directory_files(FD_path, Finance_Comprehensive_Income_path, write_path) == 0:
+    if write == 1 and Check_directory_files(FD_path, Finance_Income_path, write_path) == 0:
         return 0
 
     # http://mops.twse.com.tw/mops/web/t163sb04
@@ -1124,8 +1168,8 @@ def Financial_C_Income(year, season, write = 0):
         df_all['季'] = '{0}_{1}'.format(origin_year, season)
 
         # check columns
-        check_list = ['營收', '毛利', '營業利益', '稅前淨利', '稅前淨利', '稅後淨利', '每股盈餘', '證券代號']
-        Check_columns(df_all.columns.values, check_list)
+        filter_list = ['營收', '毛利', '營業利益', '稅前淨利', '稅後淨利', '每股盈餘', '證券代號', '季']
+        df_all = Check_columns(df_all.columns.values, filter_list, df_all)
 
         # transpose
         df_all.columns.name = ""
@@ -1136,8 +1180,123 @@ def Financial_C_Income(year, season, write = 0):
         df_all.insert(0, 'Data_Name', df_all.index)
         df_all.insert(0, '日期', YMD)
 
-        if(write == 1):#write the file
-            df_all.to_csv(write_path, index = False)
+        if write == 1 and len(df) != 0:#write the file
+            df_all.to_csv(write_path, encoding = "big5", index = False)
+            print('write the file: {0}_{1}'.format(origin_year, season) )
+
+        return df_all
+
+    except requests.RequestException as e:
+        print(e)
+        return 0
+    except Exception as e:
+        print(e)
+        return 0
+
+####------------------------------------------------------------------------------------------------------------------------------
+#個股財報: 2.資產負債表: 一般行業的 '每股淨值', '流動負債', '流動資產', '淨值', '總負債','總資產', '股本', '證券代號', '非流動負債', '非流動資產', '季'
+def Financial_Balance_Sheet(year, season, write = 0):
+    '''
+    [OBJECTIVE]
+    Parsinging Financial_statements:
+        1. Balance Sheet
+
+    [USAGE]
+    year/season is string type, write is boolean(1 or 0)
+    Example:
+        example: Financial_Balance_Sheet('2018', '3', 1)
+
+    [RETURN]
+        A dataframe
+    [NOTE]
+        # 先只考慮一般行業(Without 金控, 銀行&票券, 保險, 證券業)
+
+        淨值 = 股東權益 = 資產 - 負債
+        流動負債 = 一年之內需償還的負債
+            Note:  流動負債是用來支應公司短期每日營運的負債項目， 組成包含了短期借款、應付商業本票、應付帳款及票據、預收款項、一年內到其長期負債...等。 觀察短期償債能力時，如果流動資產低於流動負債， 而流動負債中的短期借款、應付商業本票、一年內到期長期負債三者比例越高， 短期償債壓力越大，投資應特別注意。
+        非流動負債 = 期限超過1年的債務
+        總負債 = 流動負債 + 長期負債
+        股本 = 股票面值(一般為10元)*股份總額
+        流動資產 =  一個會計年度內變現、出售或耗用的資產和現金及現金等價物。庫存現金、銀行存款、交易性金融資產、應收及預付款、存貨等
+        非流動資產 = 流動資產以外的資產，主要包括長期股權投資、固定資產、無形資產、長期待攤費用、在建工程、工程物資、研發支出等
+        每股淨值 =  (資產總額－負債總額)/發行股數
+
+    '''
+    year = int(year)
+    origin_year = year
+    season = str(season)
+
+    if year > 1990:     year -= 1911
+    if len(season) < 2: season = '0' + season
+
+    if int(season) > 4 :
+        print("Wrong INPUT format: season should be 1 to 4.")
+        return 0
+
+    if   int(season) == 1: YMD = str(origin_year) + '0516'
+    elif int(season) == 2: YMD = str(origin_year) + '0815'
+    elif int(season) == 3: YMD = str(origin_year) + '1115'
+    elif int(season) == 4: YMD = str(origin_year+1) + '0401'
+
+    Financial_Balance_Sheet_path = FD_path + "/Financial_Balance_Sheet"
+    write_path = "{0}/{1}_{2}.csv".format(Financial_Balance_Sheet_path, origin_year, season)
+
+    if write == 1 and Check_directory_files(FD_path, Financial_Balance_Sheet_path, write_path) == 0:
+        return 0
+
+    # http://mops.twse.com.tw/mops/web/t163sb05
+    url = 'http://mops.twse.com.tw/mops/web/ajax_t163sb05'
+    form_data = {'encodeURIComponent': '1',
+                 'step': '1',
+                 'firstin': '1',
+                 'off': '1',
+                 'isQuery': 'Y',
+                 'TYPEK': 'sii',
+                 'year': year,
+                 'season': season}
+      #Check
+    try:
+        # 偽停頓
+        time.sleep(2)
+        r = requests.post(url, headers = ua, data = form_data)
+        r.raise_for_status()
+
+        df_list = pd.read_html(StringIO(r.text))
+
+        df_list = [df for df in df_list if df.shape[1] > 5]
+
+        for i, df in enumerate(df_list):
+            column_index = df.index[(df[0] == '公司代號')][0]
+            df.columns = df.iloc[column_index]
+            df = df[df['公司名稱'] != '公司名稱']
+            df = df.rename(columns={'資產合計':'總資產', '資產總計':'總資產', '資產總額': '總資產', \
+                                    '負債合計':'總負債', '負債總計':'總負債', '負債總額':'總負債', \
+                                    '權益總計':'淨值', '權益合計':'淨值', '權益總額':'淨值', \
+                                    '每股參考淨值': '每股淨值', '公司代號':'證券代號'} )
+
+            df_list[i] = df
+
+        df_all = pd.concat([df for df in df_list ])
+        df_all = df_all.sort_values(['證券代號'])
+        df_all = df_all.replace('--', 0)
+        df_all['季'] = '{0}_{1}'.format(origin_year, season)
+
+        # check columns
+        filter_list = ['每股淨值', '流動負債', '流動資產', '淨值', '總負債','總資產', '股本', \
+                       '證券代號', '非流動負債', '非流動資產', '季']
+        df_all = Check_columns(df_all.columns.values, filter_list, df_all)
+
+        # transpose
+        df_all.columns.name = ""
+        df_all.index = df_all['證券代號']
+        df_all = df_all.drop(['證券代號'], axis = 1)
+        df_all = df_all.transpose()
+
+        df_all.insert(0, 'Data_Name', df_all.index)
+        df_all.insert(0, '日期', YMD)
+
+        if write == 1 and len(df) != 0:#write the file
+            df_all.to_csv(write_path, encoding = "big5", index = False)
             print('write the file: {0}_{1}'.format(origin_year, season) )
 
         return df_all

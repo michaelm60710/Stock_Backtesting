@@ -5,11 +5,8 @@ import logging
 import talib
 
 
-#from Simulator import Component
-
 '''
-Note: You can use help(func) to get info
-
+Note: Use help(func) to get more info
 '''
 class Component:
     def __init__(self, data):
@@ -103,7 +100,7 @@ class Component:
     def __mul__(self, v):
         a, b = self.ConvertData(self.data, v)
         return Component(a * b)
-    def __div__(self, v):
+    def __truediv__(self, v):
         a, b = self.ConvertData(self.data, v)
         return Component(a / b)
 
@@ -271,6 +268,18 @@ def talib_Output(OHLCV_data, talib_func, talib_func_parameters = None):
 
     # Get talib outputs
     for Key, Value in OHLCV_data_dict.items():
+        # if all Value is Nan: Remove # S0414: bug fix.
+        All_data_is_Nan = False
+        #tmp_str = ''
+        for k,v in Value.items():
+            if v.isnull().all():
+                All_data_is_Nan = True
+                #tmp_str += k + " "
+                break
+        if All_data_is_Nan:
+            #print("StockID: {0}, all value in {1} is Nan".format(Key, tmp_str) )
+            continue
+
         name_list.append(Key)
         talib_output = talib_func(Value)
         for i, arr in enumerate(talib_output):
@@ -331,6 +340,29 @@ class Components_lib:
         if DATA is None: DATA = self._DATA
         return Component(DATA['小台指_總留倉數']['未沖銷契約數']*2) - self.小台_法人多方口數(DATA) - self.小台_法人空方口數(DATA)
 
-    def 價差(self, DATA = None): # 台指 - 加權指數
+    def 價差(self, DATA = None):
+        '''
+            價差 = 台指 - 加權指數
+        '''
         if DATA is None: DATA = self._DATA
         return Component(DATA['台指期貨_合併']['Close'] - DATA['加權指數']['Close'])
+
+    def 單季ROA(self, DATA = None):
+        '''
+            Return on assets = 稅後淨利 / 平均總資產
+        '''
+        平均總資產 = (sim.DATA['台股個股']['總資產'] + sim.DATA['台股個股']['總資產'].shift(1))/2
+        return Component(sim.DATA['台股個股']['稅後淨利']/平均總資產)
+    def 單季ROE(self, DATA = None):
+        '''
+            Return on equity = 稅後淨利 / 平均股東權益
+        '''
+        平均股東權益 = (sim.DATA['台股個股']['淨值'] + sim.DATA['台股個股']['淨值'].shift(1))/2
+        return Component(sim.DATA['台股個股']['稅後淨利']/平均股東權益)
+    def 市值(self, DATA = None):
+        '''
+            市值 = 股本 * 股價 / 10
+            Note: 單位: 百萬
+        '''
+        if DATA is None: DATA = self._DATA
+        return Component(sim.DATA['台股個股']['股本']) * (sim.DATA['台股個股']['Close'] /10/1000)

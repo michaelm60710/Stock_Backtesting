@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-import os
+#import os
 import sys
-import datetime
 import argparse
 
 from settings import *
@@ -22,8 +21,6 @@ def Doc():
         Show more help message: ./main.py -h
 
     '''
-#def str_to_date(string, formate = '%Y%m%d'):
-#    return datetime.datetime.strptime(str(string), formate)
 
 if __name__ == "__main__":
 
@@ -34,6 +31,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(usage=Doc.__doc__ )
     #Crawler
     parser.add_argument("-update",  action = 'store_true', dest = 'update',  help = "Update the data.")
+    parser.add_argument("-force_update",  action = 'store_true', dest = 'update_f',  help = "Force to update the data.")
     parser.add_argument("-rebuild", action = 'store_true', dest = 'rebuild', help = "Remove and rebuild all the data.")
     parser.add_argument("-checkm", action = 'store_true',  dest = 'checkm',  help = "Check all the missing data and execute \"merge_csv\".")
     #parser.add_argument("-period",  nargs='+',           dest='period',  help= "Crawl data during a period.")
@@ -52,6 +50,8 @@ if __name__ == "__main__":
 
     if args.update:
         Crawl.UPDATE()
+    elif args.update_f:
+        Crawl.UPDATE(must_update = True)
     elif args.merge:
         Crawl.MERGE()
     elif args.checkm:
@@ -62,6 +62,21 @@ if __name__ == "__main__":
         pass
 
 '''
-#0313
-Stock_MonthlyRevenue 沒寫check_miss_data
+# TODO LIST
+1. Iplotly + MA
+評估交易費用
+有300多股票的OHLCV 根本沒data
+
+#0406
+1. Stock_MonthlyRevenue/Financial_Income/Financial_Balance_Sheet 沒寫check_miss_data
+2. 現金流量表 http://mops.twse.com.tw/mops/web/t164sb05
+
+# 0407
+1. DP: datapreprocessing 不需要每次都跑
+2. DP update pkl 應該要保證pkl把xxx_year.csv都讀過了 (或是改成檢查modified date就好)
+
+# Done
+1. bug fixes
+2. Plot_3_Investors 配futures: bug fix
+add 財報損益表&負債表
 '''

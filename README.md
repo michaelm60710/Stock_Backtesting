@@ -1,5 +1,6 @@
 # Stock_Backtesting
-股市/期貨 回測系統 (未完整)
+股市/期貨 爬蟲和回測系統 
+Stocks/Futures crawler & vectorized backtest
 
 
 # usage
@@ -29,10 +30,12 @@
 \> ./main.py -checkm
 
 > Help INFO
+
 \> ./main.py -h 
 
 # Example
-> path: Program/Jupyter/
+> 回測使用範例: Program/Jupyter/
+
 
 
 # Update 1.1V_S0206
@@ -75,4 +78,9 @@
 > 
 >  Update structure
 >
- 
+
+> # Update 1.3V_S0414
+
+1. Crawler
+
+> Add Financial Statements data: Income & Balance Sheet

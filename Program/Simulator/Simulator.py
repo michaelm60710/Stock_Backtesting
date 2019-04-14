@@ -4,11 +4,12 @@ import numpy as np
 import logging
 import sys, os
 import datetime
-sys.path.insert(0, os.path.abspath(""+"../Crawler"))
+#sys.path.insert(0, os.path.abspath(""+"../Crawler"))
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)+"/../Crawler"))
 
 from Packing import Data_preprocessing
 from Component import Component, Components_lib
-from Structure import  dotdict
+from Structure import dotdict
 from Plot import Iplot, Sim_func
 
 # import plotly
@@ -35,8 +36,8 @@ class Simulator(Iplot):
     _Report_str = ""
 
     # Class
-    _DP = None        # Class Data_preprocessing
-    Components = None # Class Components_lib
+    _DP = None        # Class: Data_preprocessing
+    Components = None # Class: Components_lib
 
     def __init__(self, updatePKL = True, rebuildPKL = False, verbose = True):
 
@@ -117,6 +118,7 @@ class Simulator(Iplot):
 
         # Setup buy, sell, hold data, tax
         self.Setup(buy = buy, sell = sell, tax = tax, long_short = long_short)
+        print("# Simulator: Start to RUN ...")
 
         # ------------------- #
         #     Mode select     #
@@ -177,9 +179,7 @@ class Simulator(Iplot):
         BuySell = hold_all.apply(EachCol, axis = 0)
 
         # Init variable
-        #trade_times = 0
-        #exception_trades = 0
-        #Ratio = 0.5
+        #trade_times = exception_trades = 0
         buy_ratio = 0
         sell_hold_stocks = 0 # 算當日把持有全賣掉所獲的unit
         I_Unit = 1           # Ideal
@@ -190,14 +190,27 @@ class Simulator(Iplot):
         self._Sell_info = []  # sell stocks, unit, profit_rate
         self._Profit_rate_list = [] # all profit rate
 
+        #Check columns
+        if len(BuySell.columns) != len(sell_price.columns):
+            b_cols    = BuySell.columns.tolist()
+            ohlc_cols = sell_price.columns.tolist()
+            miss_cols = set(b_cols) - set(ohlc_cols)
+            same_cols = list(set(b_cols) & set(ohlc_cols))
+            buy_price  = buy_price.filter(same_cols, axis = 1)
+            sell_price = sell_price.filter(same_cols, axis = 1)
+            BuySell    = BuySell.filter(same_cols, axis = 1)
+            if miss_cols: # may use wrong _hold data
+                self.logger.warning(" There are some StockID without OHLC data. -> {0}".format(miss_cols))
+
+        # Sort columns
+        BuySell    = BuySell.sort_index(axis = 1)
+        sell_price = sell_price.sort_index(axis = 1)
+        buy_price  = buy_price.sort_index(axis = 1)
+
         hold_info_list = [ 0 for i in BuySell.columns] # daily hold stocks info
         buyprice_info  = [ 0 for i in BuySell.columns] # hold stock's buy price
 
-        # Sort dataframeby columns
-        BuySell = BuySell.sort_index(axis = 1)
-        sell_price = sell_price.sort_index(axis = 1)
-        buy_price = buy_price.sort_index(axis = 1)
-
+        # Run each day
         for (idx1, row), (idx2, sell_row), (idx3, buy_row) in zip(BuySell.iterrows(), sell_price.iterrows(), buy_price.iterrows()):
 
             # Step 1. Calculate how many stocks have buy signals
@@ -507,7 +520,7 @@ class Simulator(Iplot):
             Plot_KD
             Plot_BBAND
             Plot_Volume
-            Plot_3_Investors 
+            Plot_3_Investors
         '''
 
         Future_mode = 'futures'
@@ -552,6 +565,7 @@ class Simulator(Iplot):
         fig = dict( data= [dict()], layout=dict() )
         INCREASING_COLOR = '#AA0000' # Red
         DECREASING_COLOR = '#227700' # Green
+        tmp_yaxis_min = float(OHLC_data.Low.min() - (OHLC_data.High.max() - OHLC_data.Low.min())/4)
 
         # 2. 大盤
         fig['data'].append( dict(
@@ -566,6 +580,9 @@ class Simulator(Iplot):
             increasing = dict( line = dict( color = INCREASING_COLOR ) ),
             decreasing = dict( line = dict( color = DECREASING_COLOR ) ),
         ) )
+        fig['layout']['yaxis'] = dict(
+            range= [tmp_yaxis_min, float(OHLC_data.High.max())] # 讓data y最低點大約在圖的1/5左右
+        )
         # 3. Hold siganls shape
         trade_times = 0
         if hold_AllDateIndex is not None:
@@ -585,7 +602,9 @@ class Simulator(Iplot):
         if Plot_Volume:
             fig = self.P_Add_Volume(fig = fig, StockID = StockID, Mode = Mode, start_date = start_date, end_date = end_date)
         if Plot_3_Investors:
-            fig = self.P_Add_3_Investors(fig = fig, StockID = StockID, start_date = start_date, end_date = end_date)
+            fig = self.P_Add_3_Investors(fig = fig, StockID = StockID, Mode = Mode, start_date = start_date, end_date = end_date)
+        if Plot_BBAND:
+            fig = self.P_Add_BBAND(fig = fig, StockID = StockID, start_date = start_date, end_date = end_date)
 
         if return_iplot:
             return plotly.offline.iplot(fig, filename='TW_Futures')

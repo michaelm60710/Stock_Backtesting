@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import os
-
-PKL_path = os.path.abspath(""+"../../Finance_data/Pickle")
-FD_path = os.path.abspath(""+"../../Finance_data/Parse")
+dirname = os.path.dirname(__file__)
+PKL_path = os.path.abspath(dirname + "/../../Finance_data/Pickle")
+FD_path = os.path.abspath(dirname + "/../../Finance_data/Parse")
 
 #Func_l = ['Institutional_investors', 'TaiExchange', 'TaiExchange_OHLC', \
 #          'Taifutures', 'Taifutures_Investors', 'Taifutures_LargeTrade', 'MTX', \
@@ -22,14 +22,14 @@ Crawl_dict = {'Institutional_investors': {'start':'20040407','date_format':'%Y%m
               'Stock_Price':             {'start':'20050114','date_format':'%Y%m%d',   'date_name': '日期'     },
               'Stock_Investors':         {'start':'20120502','date_format':'%Y%m%d',   'date_name': '日期'     },
               'Stock_MonthlyRevenue':    {'start':'20130101','date_format':'%Y%m%d',   'date_name': '日期'     },
-              #'Financial_C_Income':      {'start':'20130101','date_format':'%Y%m%d',   'date_name': '日期'     },
+              'Financial_Income':        {'start':'20130401','date_format':'%Y%m%d',   'date_name': '日期'     },
+              'Financial_Balance_Sheet': {'start':'20130401','date_format':'%Y%m%d',   'date_name': '日期'     },
               }
 '''
+
 # Question 1: How to add new crawler function?
     1. Update Crawl_dict
     2. Update Wrapper
-    (3. Update record.txt)
-    (4. Make new dirctory)
-    5. Update CHECK_MISSING_DATA
-    6. Update datapreprocessing
+    3. Update CHECK_MISSING_DATA
+    4. Update datapreprocessing
 '''
