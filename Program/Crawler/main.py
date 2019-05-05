@@ -63,9 +63,6 @@ if __name__ == "__main__":
 
 '''
 # TODO LIST
-1. Iplotly + MA
-評估交易費用
-有300多股票的OHLCV 根本沒data
 
 #0406
 1. Stock_MonthlyRevenue/Financial_Income/Financial_Balance_Sheet 沒寫check_miss_data
@@ -76,7 +73,12 @@ if __name__ == "__main__":
 2. DP update pkl 應該要保證pkl把xxx_year.csv都讀過了 (或是改成檢查modified date就好)
 
 # Done
-1. bug fixes
-2. Plot_3_Investors 配futures: bug fix
-add 財報損益表&負債表
+# 0415:
+    Iplotly + MA
+    fix bug: Iplotly BBAND
+# 0424:
+    fix bug: Components: check 2 df columns index
+評估交易費用
+有300多股票的OHLCV 根本沒data
+
 '''

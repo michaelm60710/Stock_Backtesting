@@ -456,6 +456,7 @@ class Data_preprocessing:
         file = open(PKL_path+'/finance_data.pkl', 'wb')
         pickle.dump(self.data_dict, file)
 
+    # not ready
     def data_preprocessing_new(self):
         from dateutil.relativedelta import relativedelta
         if self.verbose: print("# Data_preprocessing_new S0407")
@@ -632,10 +633,7 @@ class Data_preprocessing:
         file = open(PKL_path+'/finance_data.pkl', 'wb')
         pickle.dump(self.data_dict, file)
 
-
-
     def Check(self):
-
         # check duplicated
         from Check import Check_duplicated_date
         for x in self.data_dict:

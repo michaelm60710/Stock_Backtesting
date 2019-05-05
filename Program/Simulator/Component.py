@@ -11,7 +11,7 @@ Note: Use help(func) to get more info
 class Component:
     def __init__(self, data):
         if type(data) != pd.core.series.Series and type(data) != pd.core.frame.DataFrame:
-            logging.warning("Component: Wrong type, " + str(type(data)))
+            logging.warning("Component: Wrong type to Init, " + str(type(data)))
             #return
         # Init
         self.data = data
@@ -24,6 +24,7 @@ class Component:
         if isinstance(a, Component): a = a.data
         if isinstance(b, Component): b = b.data
 
+        # if data type is not Series/DataFrame/Component, Error?
         if not isinstance(a, (pd.core.frame.Series, pd.core.frame.DataFrame)) or \
            not isinstance(b, (pd.core.frame.Series, pd.core.frame.DataFrame)):
            return a, b
@@ -32,6 +33,13 @@ class Component:
             a = pd.DataFrame({c:a for c in b.columns})
         elif (type(b) == pd.core.frame.Series and type(a) == pd.core.frame.DataFrame):
             b = pd.DataFrame({c:b for c in a.columns})
+
+        #  Columns index must be same
+        if type(a) != pd.core.frame.Series and type(b) != pd.core.frame.Series and \
+           len(a.columns) != len(b.columns):
+            SET = set(a) & set(b)
+            a = a.filter(sorted(SET), axis = 1)
+            b = b.filter(sorted(SET), axis = 1)
 
         # truncate
         if a.index[0] != b.index[0]:
@@ -51,6 +59,9 @@ class Component:
             b = b.reindex(a.index).fillna(method = 'ffill')
 
         return a, b
+
+    def Convert_Columns(self, a, b):
+        pass
 
     @classmethod
     def getData(self, v):
@@ -268,16 +279,15 @@ def talib_Output(OHLCV_data, talib_func, talib_func_parameters = None):
 
     # Get talib outputs
     for Key, Value in OHLCV_data_dict.items():
-        # if all Value is Nan: Remove # S0414: bug fix.
+        # use fillna(method='ffill') first. if all Value is still Nan: Remove it. # S0504: bug fix.
         All_data_is_Nan = False
-        #tmp_str = ''
+
         for k,v in Value.items():
+            Value[k] = v.fillna(method='ffill') # talib doesn't work well with Nan
             if v.isnull().all():
                 All_data_is_Nan = True
-                #tmp_str += k + " "
                 break
         if All_data_is_Nan:
-            #print("StockID: {0}, all value in {1} is Nan".format(Key, tmp_str) )
             continue
 
         name_list.append(Key)
@@ -333,8 +343,8 @@ class Components_lib:
                        + 期貨法人['小台指_自營商']['空方未平倉口數'] )
 
     def 散戶多空(self, DATA = None): # 散戶指標
-        if DATA is None: DATA = self._DATA
-        return self.小台_法人空方口數(DATA) - self.小台_法人多方口數(DATA)
+        #if DATA is None: DATA = self._DATA
+        return self.小台_法人空方口數() - self.小台_法人多方口數()
 
     def 散戶留倉數(self, DATA = None):
         if DATA is None: DATA = self._DATA
@@ -351,18 +361,20 @@ class Components_lib:
         '''
             Return on assets = 稅後淨利 / 平均總資產
         '''
-        平均總資產 = (sim.DATA['台股個股']['總資產'] + sim.DATA['台股個股']['總資產'].shift(1))/2
-        return Component(sim.DATA['台股個股']['稅後淨利']/平均總資產)
+        if DATA is None: DATA = self._DATA
+        平均總資產 = (DATA['台股個股']['總資產'] + DATA['台股個股']['總資產'].shift(1))/2
+        return Component(DATA['台股個股']['稅後淨利']/平均總資產)
     def 單季ROE(self, DATA = None):
         '''
             Return on equity = 稅後淨利 / 平均股東權益
         '''
-        平均股東權益 = (sim.DATA['台股個股']['淨值'] + sim.DATA['台股個股']['淨值'].shift(1))/2
-        return Component(sim.DATA['台股個股']['稅後淨利']/平均股東權益)
+        if DATA is None: DATA = self._DATA
+        平均股東權益 = (DATA['台股個股']['淨值'] + DATA['台股個股']['淨值'].shift(1))/2
+        return Component(DATA['台股個股']['稅後淨利']/平均股東權益)
     def 市值(self, DATA = None):
         '''
             市值 = 股本 * 股價 / 10
             Note: 單位: 百萬
         '''
         if DATA is None: DATA = self._DATA
-        return Component(sim.DATA['台股個股']['股本']) * (sim.DATA['台股個股']['Close'] /10/1000)
+        return Component(DATA['台股個股']['股本']) * (DATA['台股個股']['Close'] /10/1000)

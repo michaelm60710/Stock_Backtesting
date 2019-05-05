@@ -15,6 +15,24 @@ class dotdict(dict):
     def __dir__(self):
         return self.keys()
 
+class Event:
+    '''
+        If there is a buy signal. Store the INFO.
+    '''
+    #StockID = None
+    #Mode = None
+    INFO_dict = {}
+    def __init__(self):
+        pass
+
+    def Get(self, Key):
+        return self.INFO_dict.get(Key, None)
+
+    def Refresh(self,  **kwargs):
+        self.INFO_dict = kwargs
+
+
+
 
 def date_convert(date):
     '''

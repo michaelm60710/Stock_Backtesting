@@ -7,14 +7,30 @@ import talib
 from functools import wraps
 
 # import plotly
+import plotly
 
 # Component
 from Component import talib_Output
 from Structure import date_convert
 
 class Sim_func():
+
+    # Information
+    _buy  = None
+    _sell = None
+    _hold = None
+    _hold_AllDateIndex = None
+    _tax = None
+    _long_short = 'long'
+    Report_item = dict()
+    _each_stocks_trade_count = None
+    _Sell_info = None
+    _Profit_rate_list = None
+    _Report_str = ""
+
     def __init__(self,DATA):
         self.DATA = DATA
+        self.logger = logging.getLogger(__name__)
 
     def _GetStock_OHLCV_data(self, StockID):
         name_list = ['Open', 'High', 'Low', 'Close', 'Volume']
@@ -45,8 +61,19 @@ class Sim_func():
                 Mode = kwargs['Mode'].lower()
                 if   Mode[0] == 's':
                     Mode = 'stocks'
-                elif Mode[0] == 'f': Mode = 'futures'
+                elif Mode[0] == 'f':
+                    Mode = 'futures'
                 kwargs['Mode'] = Mode
+            # check long_short
+            if 'long_short' in kwargs:
+                long_short = str(kwargs['long_short'])[0].lower()
+                if long_short == 'l':
+                    long_short = 'long'
+                elif long_short == 's':
+                    long_short = 'short'
+                else:
+                    self.logger.error("Wrong long_short input. Try to use: \'long\' or \'short\'.")
+                kwargs['long_short'] = long_short
 
             return decorated(*args, **kwargs)
         return wrapper
@@ -92,24 +119,35 @@ class Iplot(Sim_func):
 
         talib_func_parameters = {'timeperiod':20, 'nbdevup':2, 'nbdevdn':2, 'matype':talib.MA_Type.T3 }
         upperband, middleband, lowerband = talib_Output(OHLC_data, talib.abstract.BBANDS, talib_func_parameters = talib_func_parameters)
-        upperband = upperband.data.truncate(start_date, end_date, axis = 0)
-        lowerband = lowerband.data.truncate(start_date, end_date, axis = 0)
+        upperband  = upperband.data.truncate(start_date, end_date, axis = 0)
+        middleband = middleband.data.truncate(start_date, end_date, axis = 0)
+        lowerband  = lowerband.data.truncate(start_date, end_date, axis = 0)
 
         # add upperBBAND & lowerBBAND
-        fig['data'].append( dict(
-                type = 'scatter',
-                y = upperband,
-                x = upperband.index,
-                yaxis='y1',
-                name='UpperBAND'
-            ) )
-        fig['data'].append( dict(
-                type = 'scatter',
-                y = lowerband,
-                x = lowerband.index,
-                yaxis='y1',
-                name='LowerBAND'
-            ) )
+        fig = self.P_Add_y1(fig, upperband,  'UpperBAND')
+        fig = self.P_Add_y1(fig, middleband, 'MiddleBAND')
+        fig = self.P_Add_y1(fig, lowerband,  'LowerBAND')
+
+        return fig
+
+    @Sim_func._input_wrapper
+    def P_Add_MV(self, mv_days = 5, fig = None, StockID = None, Mode = 'futures', start_date = None, end_date = None):
+        # settings
+        if Mode == 'futures':
+            close_data = self.DATA['加權指數']['Close']
+        else:
+            close_data = self.DATA['台股個股']['Close'][StockID]
+
+        if fig is None:
+            fig = dict( data= [dict()], layout=dict() )
+
+        if start_date is None: start_date = close_data.index[0]
+        if end_date   is None: end_date   = close_data.index[-1]
+
+        mv_close_data = close_data.rolling(mv_days).mean().truncate(start_date, end_date, axis = 0)
+
+        # add close_data
+        fig = self.P_Add_y1(fig, mv_close_data, "MV_{0}".format(mv_days))
 
         return fig
 
@@ -262,3 +300,86 @@ class Iplot(Sim_func):
         fig['layout']['barmode'] = 'relative'
 
         return fig
+
+    def P_Add_y1(self, fig, series, naming):
+        fig['data'].append( dict(
+                type = 'scatter',
+                y = series,
+                x = series.index,
+                yaxis = 'y1',
+                name = naming
+            ) )
+        return fig
+
+    def Plot_Correlation(self, df, ignore_outliers = True, std_n = 3):
+        '''
+            Scatter Plot: profit ratio & given df
+            Observe the correlation between two array after the Simulation.
+            Example:
+                sim.Correlation_plot(df = sim.DATA.台股個股['稅後淨利'], ignore_outliers = True, std_n = 3)
+        '''
+        # Check _Profit_rate_list
+        if self._Profit_rate_list is None:
+            self.logger.error("Profit_rate_list is Empty.")
+            return
+
+        # Convert df data
+        from Component import Component
+        if isinstance(df, Component): df = df.data
+        first_idx = df.index[0]
+        df = df.reindex(self._hold.index).fillna(method = 'ffill')
+        df = df.loc[first_idx:]
+
+        # Get profit_list & data_list
+        trade_info = self._Profit_rate_list[0]
+        profit_list = [round(x[0].tolist(), 4) for x in self._Profit_rate_list]
+        text_info = [ "Stock ID = {0}, Buy_date = {1}, idx = {2}" \
+                    .format(x[1]['stockID'], x[1]['Buy_date'].strftime('%Y-%m-%d'), idx) \
+                    for idx, x in enumerate(self._Profit_rate_list)]
+        data_list   = list()
+        for trade_info in self._Profit_rate_list:
+            stock_ID = trade_info[1]['stockID']
+            Buy_date = trade_info[1]['Buy_date']
+            profit_rate = trade_info[0]
+            if Buy_date < first_idx or stock_ID not in df.columns:
+                data_list.append(np.nan)
+            else:
+                d = df[stock_ID][Buy_date]
+                if type(d) is bool:
+                    d = int(d)
+                else: # Converting numpy dtypes to native python types
+                    d = d.tolist()
+                data_list.append(d)
+
+        # ignore outliers
+        if ignore_outliers:
+            mean = np.nanmean(data_list)
+            sd = np.nanstd(data_list)
+            print('Remove outliers:\nmean = {0:.2f}, upper bound = {1:.2f}, lower bound = {2:.2f}'.format(mean, mean+std_n*sd, mean-std_n*sd))
+            data_list = [ np.nan if x > mean+std_n*sd or x < mean-std_n*sd else x for x in data_list]
+        else:
+            print('Plot all data')
+
+        # plot info
+        fig = dict( data= [dict()], layout=dict() )
+        fig['data'].append(
+            dict(
+                type = 'scatter',
+                y = data_list,
+                x = profit_list,
+                mode = 'markers',
+                marker = dict(
+                    size = 3,
+                    color = 'rgba(152, 0, 0, .8)',
+                    line = dict(
+                        width = 1,
+                        color = 'rgb(0, 0, 0)'
+                    )
+                ),
+                text=text_info,
+            )
+        )
+        fig['layout']['xaxis'] = dict(
+            title = 'profit rate',
+        )
+        return plotly.offline.iplot(fig, filename='Correlation')
